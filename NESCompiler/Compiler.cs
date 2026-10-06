@@ -20,7 +20,7 @@ public class Compiler : AstVisitor
         {
             Mapper = 0,
             PRG = new byte[32 * 1024],
-            CHR = Tileset.ConvertsChar(AppDomain.CurrentDomain.BaseDirectory + "\\Oldskool-PC.png")
+            CHR = Tileset.Default
         };
 
         Node ast = _parser.ParseScript(_src);
