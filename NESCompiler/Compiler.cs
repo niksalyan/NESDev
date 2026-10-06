@@ -139,11 +139,12 @@ public class Compiler : AstVisitor
         //
         PpuAddress(prg, ref p, 0x2090);
 
-        WritePpu(prg, ref p, 72 - 32);
-        WritePpu(prg, ref p, 69 - 32);
-        WritePpu(prg, ref p, 76 - 32);
-        WritePpu(prg, ref p, 76 - 32);
-        WritePpu(prg, ref p, 79 - 32);
+        WritePpu(prg, ref p, (byte)'H' - 32);
+        WritePpu(prg, ref p, (byte)'E' - 32);
+        WritePpu(prg, ref p, (byte)'L' - 32);
+        WritePpu(prg, ref p, (byte)'L' - 32);
+        WritePpu(prg, ref p, (byte)'O' - 32);
+        WritePpu(prg, ref p, (byte)'!' - 32);
 
         // --------------------------------------------------------
         // Reset scroll
