@@ -46,7 +46,7 @@ namespace NTOSDev.Components
             Controls.Add(emulator);
 
             var compiler = new Compiler();
-            var cartridge = compiler.Compile();
+            var cartridge = compiler.Compile("print(\"Hello, World!\")");
 
             Debug.WriteLine($"Cartridge size: {cartridge.Length} bytes");
 

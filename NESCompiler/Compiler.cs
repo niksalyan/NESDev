@@ -1,18 +1,30 @@
-﻿using com.clusterrr.Famicom.Containers;
+﻿using Acornima;
+using Acornima.Ast;
+using com.clusterrr.Famicom.Containers;
 using System.Diagnostics;
 
 namespace NESCompiler;
 
-public class Compiler
+public class Compiler : AstVisitor
 {
-    public byte[] Compile()
+    private static readonly Parser _parser = new Parser(new ParserOptions()
     {
+        AllowTopLevelUsing = true
+    });
+    private string _src;
+
+    public byte[] Compile(string source)
+    {
+        _src = source;
         var nes = new NesFile
         {
             Mapper = 0,
             PRG = new byte[32 * 1024],
             CHR = Tileset.ConvertsChar(AppDomain.CurrentDomain.BaseDirectory + "\\Oldskool-PC.png")
         };
+
+        Node ast = _parser.ParseScript(_src);
+        Visit(ast);
 
         // BuildChr(nes.CHR);
 
@@ -302,5 +314,9 @@ public class Compiler
         }
     }
 
+    public string GetText(Acornima.Range range)
+    {
+        return _src.Substring(range.Start, range.Length);
+    }
 
 }
