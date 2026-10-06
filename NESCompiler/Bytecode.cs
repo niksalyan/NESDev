@@ -74,45 +74,65 @@ namespace NESCompiler
 
     public class Bytecode
     {
-        private readonly List<byte> _code = [];
+        private readonly byte[] _prg = new byte[32 * 1024];
+        private int _p = 0;
+
+        public int P => _p;
+
         private List<Variable> _variables = [];
 
 
-        public byte[] ToArray()
-            => _code.ToArray();
+        public byte[] ToBytecode() => _prg.ToArray();
 
         public void LdaImmediate(byte value)
         {
-            _code.Add(0xA9);
-            _code.Add(value);
+            Emit(0xA9);
+            Emit(value);
         }
 
         public void Sta(ushort address)
         {
-            _code.Add(0x8D);
-            _code.Add((byte)(address & 0xFF));
-            _code.Add((byte)(address >> 8));
+            Emit(0x8D);
+            Emit((byte)(address & 0xFF));
+            Emit((byte)(address >> 8));
         }
 
         public void Lda(ushort address)
         {
-            _code.Add(0xAD);
-            _code.Add((byte)(address & 0xFF));
-            _code.Add((byte)(address >> 8));
+            Emit(0xAD);
+            Emit((byte)(address & 0xFF));
+            Emit((byte)(address >> 8));
         }
 
         public void Inc(ushort address)
         {
-            _code.Add(0xEE);
-            _code.Add((byte)(address & 0xFF));
-            _code.Add((byte)(address >> 8));
+            Emit(0xEE);
+            Emit((byte)(address & 0xFF));
+            Emit((byte)(address >> 8));
         }
 
         public void Jmp(ushort address)
         {
-            _code.Add(0x4C);
-            _code.Add((byte)(address & 0xFF));
-            _code.Add((byte)(address >> 8));
+            Emit(0x4C);
+            Emit((byte)(address & 0xFF));
+            Emit((byte)(address >> 8));
+        }
+
+        public void Emit(
+        params byte[] bytes)
+        {
+            foreach (byte b in bytes)
+            {
+                _prg[_p++] = b;
+            }
+        }
+
+        public void WriteVector(
+        int offset,
+        ushort address)
+        {
+            _prg[offset] = (byte)(address & 0xFF);
+            _prg[offset + 1] = (byte)(address >> 8);
         }
 
         public Variable GetVariable(string name)
