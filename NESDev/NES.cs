@@ -1,6 +1,10 @@
 ﻿
 
+using NESCompiler;
+using NTOSDev.Components;
 using NTOSDev.Libs;
+using System.Diagnostics;
+using System.Text;
 using WeifenLuo.WinFormsUI.Docking;
 
 namespace NTOSDev
@@ -12,11 +16,49 @@ namespace NTOSDev
 
         public static Action<string> Reload;
 
+        public static Compiler Compiler = new Compiler();
 
-        public static string LastProject { get => RegistryHelper.ReadRegistry("NESLastProject"); set => RegistryHelper.WriteRegistry("NESSLastProject", value); }
+
+        public static string LastProject { get => RegistryHelper.ReadRegistry("NESLastProject"); set => RegistryHelper.WriteRegistry("NESLastProject", value); }
 
 
-        
+        public static void Compile(string src)
+        {
+            var cartridge = Compiler.Compile(src);
+
+            Debug.WriteLine($"Cartridge size: {cartridge.Length} bytes");
+
+            File.WriteAllBytes("output.nes", cartridge);
+
+            File.WriteAllText("output.txt", ToArduinoArray(cartridge));
+
+            DEmulator.BootCartridge(cartridge);
+        }
+
+
+        public static string ToArduinoArray(byte[] bytecode, int columns = 8)
+        {
+            var sb = new StringBuilder();
+
+            for (int i = 0; i < bytecode.Length; i++)
+            {
+                sb.Append($"0x{bytecode[i]:X2}");
+
+                if (i < bytecode.Length - 1)
+                {
+                    sb.Append(',');
+                }
+
+                if ((i + 1) % columns == 0)
+                {
+                    sb.AppendLine();
+                }
+            }
+
+            return sb.ToString();
+        }
+
+
         public static void OpenProject()
         {
             using (var dialog = new FolderBrowserDialog())

@@ -11,56 +11,30 @@ namespace NTOSDev.Components
     {
 
         private static DEmulator instance;
+
+        public UI Emulator;
         private bool initialized = false;
 
         public DEmulator()
         {
+            instance = this;
             InitializeComponent();
             Text = "Emulator";
             HideOnClose = true;
             TabStop = true;
-            instance = this;
+
+            Emulator = new UI();
+
+            Emulator.Dock = DockStyle.Fill;
+            Controls.Add(Emulator);
+
         }
 
-        public static void RefreshEmulator()
+
+        public static void BootCartridge(byte[] cartridge)
         {
-            // instance?.InitEmulator();
+            instance?.Emulator?.BootCartridge(cartridge);
         }
 
-        public void BuildAll()
-        {
-            //Emulator.BuildAll();
-        }
-
-        private async void InitEmulator()
-        {
-            if (initialized)
-                return;
-            initialized = true;
-            // var cartridge = File.ReadAllBytes(@"D:\Games\NES\roms\Contra.nes");
-
-            
-            var emulator = new UI();
-
-            emulator.Dock = DockStyle.Fill;
-            Controls.Add(emulator);
-
-            var compiler = new Compiler();
-            var cartridge = compiler.Compile("print(\"Hello, World!\")");
-
-            Debug.WriteLine($"Cartridge size: {cartridge.Length} bytes");
-
-            File.WriteAllBytes("output.nes", cartridge);
-
-            emulator.BootCartridge(cartridge);
-            emulator.Focus();
-
-        }
-
-        private void DEmulator_Load(object sender, EventArgs e)
-        {
-
-            InitEmulator();
-        }
     }
 }

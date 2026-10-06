@@ -40,7 +40,7 @@ namespace NTOSDev
         public Main()
         {
             NES.Main = this;
-            appLayoutFile = Path.Combine(appDataPath, "NTOSDev", "layout.xml");
+            appLayoutFile = Path.Combine(appDataPath, "NESDev", "layout.xml");
             Directory.CreateDirectory(Path.GetDirectoryName(appLayoutFile));
             Debug.WriteLine($"Layout file path: {appLayoutFile}");
             InitializeComponent();
@@ -62,6 +62,7 @@ namespace NTOSDev
 
             NES.Reload += (s) =>
             {
+                Debug.WriteLine($"Reloading project: {s}");
                 CloseAllPanels(typeof(CodeEditor));
                 projectExplorer.LoadFolder(s);
                 DoAction("projectExplorer");
@@ -302,7 +303,7 @@ function loop() {{
                     CodeEditor.currentFile = null;
                     dEmulator.Show(dockPanel, DockState.DockRight);
                     //dEmulator.InitEmulator();
-                    dEmulator.BuildAll();
+                    // dEmulator.BuildAll();
                     //serialManager.Show(dockPanel, DockState.DockBottom);
                     break;
                 case "imageConverter":

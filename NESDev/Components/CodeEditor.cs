@@ -64,7 +64,7 @@ namespace NTOSDev.Controls
             if (currentFile == filePath && !force) return;
             currentFile = filePath;
             codeViews[filePath] = this;
-            DEmulator.RefreshEmulator();
+            NES.Compile(scintilla.Text);
         }
 
         private void ScintillaEditor_TextChanged(object? sender, EventArgs e)

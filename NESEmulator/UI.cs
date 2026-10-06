@@ -118,6 +118,7 @@ namespace dotNES
 
         public void BootCartridge(byte[] raw)
         {
+            Debug.WriteLine($"Booting cartridge of size {raw.Length} bytes");
             _renderThread?.Interrupt();
             
             emu = new Emulator(raw, _controller);

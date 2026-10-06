@@ -1,9 +1,12 @@
 ﻿using Acornima.Ast;
+using Microsoft.VisualBasic.ApplicationServices;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Reflection.Emit;
-using System.Text;
+using System.IO;
+using System.Linq;
+using System.Security.Policy;
+using static System.Windows.Forms.VisualStyles.VisualStyleElement.TreeView;
 
 namespace NESCompiler;
 
@@ -178,13 +181,15 @@ public enum OpCode : byte
     IncAbsoluteX = 0xFE
 }
 
-
 public class Instruction
 {
     [DisplayName("#")]
     public int Index { get; set; }
+
     public OpCode OpCode { get; }
+
     public object? Operand { get; }
+
     public int Address { get; set; }
 
     public Instruction(
@@ -201,7 +206,6 @@ public enum VariableType
     None,
     Byte,
     Int16,
-
     Int32
 }
 
@@ -210,7 +214,11 @@ public class Variable
     public string Name { get; }
 
     [DisplayName("Type")]
-    public string DisplayType => Kind.ToString() + "." + Type.ToString() + (IsArray ? "[" + Length + "]" : "");
+    public string DisplayType =>
+        Kind.ToString() +
+        "." +
+        Type.ToString() +
+        (IsArray ? "[" + Length + "]" : "");
 
     [Browsable(false)]
     public VariableType Type { get; }
@@ -223,6 +231,7 @@ public class Variable
     public int Size => GetSize();
 
     public bool IsArray = false;
+
     public int Length;
 
     public Variable(
@@ -230,8 +239,7 @@ public class Variable
         VariableType type,
         VariableDeclarationKind kind,
         bool isArray = false,
-        int length = 1
-        )
+        int length = 1)
     {
         Name = name;
         Type = type;
@@ -246,10 +254,13 @@ public class Variable
         {
             case VariableType.Byte:
                 return 1;
+
             case VariableType.Int16:
                 return 2;
+
             case VariableType.Int32:
                 return 4;
+
             default:
                 return 0;
         }
@@ -263,46 +274,449 @@ public class Variable
 
 public class Bytecode
 {
-    
-    private List<Instruction> _instructions = [];
-    private List<Variable> _variables = [];
+    public const int PrgSize = 32 * 1024;
 
+    // CPU address where PRG starts.
+    public const int PrgCpuAddress = 0x8000;
 
-    public void Add(OpCode opCode, object? operand = null)
+    // Last 6 bytes of the 32 KB PRG are the vectors.
+    public const int VectorOffset = 0x7FFA;
+
+    private readonly List<Instruction> _instructions = [];
+
+    private readonly List<Variable> _variables = [];
+
+    public List<Variable> Variables =>
+        _variables;
+
+    public List<Instruction> Instructions =>
+        _instructions;
+
+    public void Add(
+        OpCode opCode,
+        object? operand = null)
     {
-        _instructions.Add(new Instruction(opCode, operand));
+        _instructions.Add(
+            new Instruction(opCode, operand));
     }
 
+    // ============================================================
+    // Final bytecode generation
+    // ============================================================
 
     public byte[] ToBytecode()
     {
-        List<byte> bytes = new List<byte>();
+        // Pass 1:
+        // Generate the bytecode and assign instruction addresses.
+        PrepareBytecode(assignAddresses: true);
+
+        // Pass 2:
+        // Generate the final bytecode using the addresses calculated
+        // during pass 1.
+        return PrepareBytecode(assignAddresses: false);
+    }
+
+    public byte[] PrepareBytecode(
+        bool assignAddresses = false)
+    {
+        using var stream = new MemoryStream(
+            capacity: PrgSize);
+
+        int index = 0;
+
         foreach (var instruction in _instructions)
         {
-            bytes.Add((byte)instruction.OpCode);
-            if (instruction.Operand != null)
+            if (assignAddresses)
             {
-                if (instruction.Operand is byte b)
-                {
-                    bytes.Add(b);
-                }
-                else if (instruction.Operand is ushort s)
-                {
-                    bytes.Add((byte)(s & 0xFF));
-                    bytes.Add((byte)(s >> 8));
-                }
-                else if (instruction.Operand is sbyte sb)
-                {
-                    bytes.Add((byte)sb);
-                }
-                else
-                {
-                    throw new InvalidOperationException(
-                        $"Unsupported operand type: {instruction.Operand.GetType()}");
-                }
+                instruction.Index = index;
+
+                instruction.Address =
+                    checked(
+                        PrgCpuAddress +
+                        (int)stream.Length);
             }
+
+            WriteInstruction(
+                stream,
+                instruction,
+                assignAddresses);
+
+            index++;
         }
-        return bytes.ToArray();
+
+        // The program must fit before the vector table.
+        if (stream.Length > VectorOffset)
+        {
+            throw new InvalidOperationException(
+                $"NES program is too large. " +
+                $"Program size: {stream.Length} bytes, " +
+                $"maximum: {VectorOffset} bytes.");
+        }
+
+        // Fill unused PRG space with zeroes.
+        while (stream.Length < VectorOffset)
+        {
+            stream.WriteByte(0x00);
+        }
+
+        // ========================================================
+        // NES vectors
+        //
+        // PRG offset $7FFA = CPU $FFFA = NMI
+        // PRG offset $7FFC = CPU $FFFC = RESET
+        // PRG offset $7FFE = CPU $FFFE = IRQ/BRK
+        // ========================================================
+
+        ushort entryAddress =
+            _instructions.Count > 0
+                ? (ushort)_instructions[0].Address
+                : (ushort)PrgCpuAddress;
+
+        WriteUInt16(stream, entryAddress); // NMI
+        WriteUInt16(stream, entryAddress); // RESET
+        WriteUInt16(stream, entryAddress); // IRQ/BRK
+
+        if (stream.Length != PrgSize)
+        {
+            throw new InvalidOperationException(
+                $"Invalid NES PRG size: {stream.Length} bytes. " +
+                $"Expected exactly {PrgSize} bytes.");
+        }
+
+        return stream.ToArray();
+    }
+
+    // ============================================================
+    // Instruction encoder
+    // ============================================================
+
+    private void WriteInstruction(
+        Stream stream,
+        Instruction instruction,
+        bool assignAddresses)
+    {
+        stream.WriteByte(
+            (byte)instruction.OpCode);
+
+        switch (instruction.OpCode)
+        {
+            // ----------------------------------------------------
+            // No operand
+            // ----------------------------------------------------
+
+            case OpCode.Php:
+            case OpCode.Plp:
+            case OpCode.Pha:
+            case OpCode.Pla:
+            case OpCode.Rti:
+            case OpCode.Rts:
+            case OpCode.Clc:
+            case OpCode.Sec:
+            case OpCode.Cli:
+            case OpCode.Sei:
+            case OpCode.Clv:
+            case OpCode.Cld:
+            case OpCode.Sed:
+            case OpCode.Tay:
+            case OpCode.Txa:
+            case OpCode.Tya:
+            case OpCode.Txs:
+            case OpCode.Tsx:
+            case OpCode.Iny:
+            case OpCode.Dey:
+            case OpCode.Inx:
+            case OpCode.Dex:
+            case OpCode.Nop:
+            case OpCode.AslAccumulator:
+                break;
+
+            // ----------------------------------------------------
+            // One-byte operands
+            // ----------------------------------------------------
+
+            case OpCode.OraImmediate:
+            case OpCode.AslZeroPage:
+            case OpCode.OraZeroPage:
+            case OpCode.OraZeroPageX:
+            case OpCode.AslZeroPageX:
+            case OpCode.AndImmediate:
+            case OpCode.BitZeroPage:
+            case OpCode.AndZeroPage:
+            case OpCode.AndZeroPageX:
+            case OpCode.RolZeroPage:
+            case OpCode.RolZeroPageX:
+            case OpCode.EorImmediate:
+            case OpCode.EorZeroPage:
+            case OpCode.EorZeroPageX:
+            case OpCode.LsrZeroPage:
+            case OpCode.LsrZeroPageX:
+            case OpCode.AdcImmediate:
+            case OpCode.AdcZeroPage:
+            case OpCode.AdcZeroPageX:
+            case OpCode.RorZeroPage:
+            case OpCode.RorZeroPageX:
+            case OpCode.StyZeroPage:
+            case OpCode.StaZeroPage:
+            case OpCode.StxZeroPage:
+            case OpCode.StyZeroPageX:
+            case OpCode.StaZeroPageX:
+            case OpCode.StxZeroPageY:
+            case OpCode.LdaImmediate:
+            case OpCode.LdyImmediate:
+            case OpCode.LdaZeroPage:
+            case OpCode.LdxImmediate:
+            case OpCode.LdyZeroPage:
+            case OpCode.LdxZeroPage:
+            case OpCode.LdyZeroPageX:
+            case OpCode.LdaZeroPageX:
+            case OpCode.LdxZeroPageY:
+            case OpCode.CpyImmediate:
+            case OpCode.CpyZeroPage:
+            case OpCode.CmpImmediate:
+            case OpCode.CmpZeroPage:
+            case OpCode.CmpZeroPageX:
+            case OpCode.DecZeroPage:
+            case OpCode.DecZeroPageX:
+            case OpCode.CpxImmediate:
+            case OpCode.CpxZeroPage:
+            case OpCode.SbcImmediate:
+            case OpCode.SbcZeroPage:
+            case OpCode.SbcZeroPageX:
+            case OpCode.IncZeroPage:
+            case OpCode.IncZeroPageX:
+            case OpCode.OraIndirectX:
+            case OpCode.OraIndirectY:
+            case OpCode.AndIndirectX:
+            case OpCode.AndIndirectY:
+            case OpCode.EorIndirectX:
+            case OpCode.EorIndirectY:
+            case OpCode.AdcIndirectX:
+            case OpCode.AdcIndirectY:
+            case OpCode.StaIndirectX:
+            case OpCode.StaIndirectY:
+            case OpCode.LdaIndirectX:
+            case OpCode.LdaIndirectY:
+            case OpCode.CmpIndirectX:
+            case OpCode.CmpIndirectY:
+            case OpCode.SbcIndirectX:
+            case OpCode.SbcIndirectY:
+                WriteByteOperand(
+                    stream,
+                    instruction.Operand);
+                break;
+
+            // ----------------------------------------------------
+            // Relative branches
+            // ----------------------------------------------------
+
+            case OpCode.Bpl:
+            case OpCode.Bmi:
+            case OpCode.Bvc:
+            case OpCode.Bvs:
+            case OpCode.Bcc:
+            case OpCode.Bcs:
+            case OpCode.Bne:
+            case OpCode.Beq:
+                WriteBranchOperand(
+                    stream,
+                    instruction,
+                    assignAddresses);
+                break;
+
+            // ----------------------------------------------------
+            // Two-byte operands
+            // ----------------------------------------------------
+            case OpCode.OraAbsolute:
+            case OpCode.OraAbsoluteX:
+            case OpCode.OraAbsoluteY:
+            case OpCode.AndAbsolute:
+            case OpCode.AndAbsoluteX:
+            case OpCode.AndAbsoluteY:
+            case OpCode.BitAbsolute:
+            case OpCode.RolAbsolute:
+            case OpCode.RolAbsoluteX:
+            case OpCode.EorAbsolute:
+            case OpCode.EorAbsoluteX:
+            case OpCode.EorAbsoluteY:
+            case OpCode.LsrAbsolute:
+            case OpCode.LsrAbsoluteX:
+            case OpCode.AslAbsolute:
+            case OpCode.AslAbsoluteX:
+            case OpCode.AdcAbsolute:
+            case OpCode.AdcAbsoluteX:
+            case OpCode.AdcAbsoluteY:
+            case OpCode.RorAbsolute:
+            case OpCode.RorAbsoluteX:
+            case OpCode.StyAbsolute:
+            case OpCode.StaAbsolute:
+            case OpCode.StaAbsoluteX:
+            case OpCode.StaAbsoluteY:
+            case OpCode.StxAbsolute:
+            case OpCode.LdyAbsolute:
+            case OpCode.LdyAbsoluteX:
+            case OpCode.LdaAbsolute:
+            case OpCode.LdaAbsoluteX:
+            case OpCode.LdaAbsoluteY:
+            case OpCode.LdxAbsolute:
+            case OpCode.LdxAbsoluteY:
+            case OpCode.CpyAbsolute:
+            case OpCode.CmpAbsolute:
+            case OpCode.CmpAbsoluteX:
+            case OpCode.CmpAbsoluteY:
+            case OpCode.DecAbsolute:
+            case OpCode.DecAbsoluteX:
+            case OpCode.CpxAbsolute:
+            case OpCode.SbcAbsolute:
+            case OpCode.SbcAbsoluteX:
+            case OpCode.SbcAbsoluteY:
+            case OpCode.IncAbsolute:
+            case OpCode.IncAbsoluteX:
+            case OpCode.Jsr:
+            case OpCode.JmpAbsolute:
+            case OpCode.JmpIndirect:
+                WriteUInt16Operand(
+                    stream,
+                    instruction.Operand);
+                break;
+
+            case OpCode.Brk:
+                // BRK is a 2-byte instruction on 6502.
+                // The second byte is ignored by the CPU.
+                WriteByteOperand(
+                    stream,
+                    instruction.Operand ?? (byte)0);
+                break;
+
+            default:
+                throw new InvalidOperationException(
+                    $"Unsupported opcode: {instruction.OpCode}");
+        }
+    }
+
+    // ============================================================
+    // Branch encoding
+    // ============================================================
+
+    private void WriteBranchOperand(
+        Stream stream,
+        Instruction instruction,
+        bool assignAddresses)
+    {
+        if (instruction.Operand == null)
+        {
+            throw new InvalidOperationException(
+                $"Branch {instruction.OpCode} requires an operand.");
+        }
+
+        // Operand can be:
+        //
+        // 1. sbyte:
+        //    Already-resolved relative offset.
+        //
+        // 2. int:
+        //    Instruction index.
+        //
+        // For the compiler we use instruction indexes so that
+        // pass 1 can resolve the actual relative distance.
+
+        if (instruction.Operand is int targetInstruction)
+        {
+            if (targetInstruction < 0 ||
+                targetInstruction >= _instructions.Count)
+            {
+                throw new InvalidOperationException(
+                    $"Invalid branch target instruction: {targetInstruction}");
+            }
+
+            if (assignAddresses)
+            {
+                // Pass 1 only needs the size.
+                stream.WriteByte(0);
+                return;
+            }
+
+            int targetAddress =
+                _instructions[targetInstruction].Address;
+
+            int branchAddress =
+                instruction.Address;
+
+            int nextInstruction =
+                branchAddress + 2;
+
+            int offset =
+                targetAddress - nextInstruction;
+
+            if (offset < -128 || offset > 127)
+            {
+                throw new InvalidOperationException(
+                    $"Branch target is out of range: " +
+                    $"{instruction.OpCode} at ${branchAddress:X4} " +
+                    $"to ${targetAddress:X4}.");
+            }
+
+            stream.WriteByte(
+                unchecked((byte)(sbyte)offset));
+
+            return;
+        }
+
+        if (instruction.Operand is sbyte relative)
+        {
+            stream.WriteByte(
+                unchecked((byte)relative));
+
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Invalid branch operand type: " +
+            $"{instruction.Operand.GetType()}");
+    }
+
+    // ============================================================
+    // Operand writers
+    // ============================================================
+
+    private static void WriteByteOperand(
+        Stream stream,
+        object? operand)
+    {
+        if (operand == null)
+        {
+            throw new InvalidOperationException(
+                "Instruction requires a byte operand.");
+        }
+
+        stream.WriteByte(
+            Convert.ToByte(operand));
+    }
+
+    private static void WriteUInt16Operand(
+        Stream stream,
+        object? operand)
+    {
+        if (operand == null)
+        {
+            throw new InvalidOperationException(
+                "Instruction requires a 16-bit operand.");
+        }
+
+        WriteUInt16(
+            stream,
+            Convert.ToUInt16(operand));
+    }
+
+    private static void WriteUInt16(
+        Stream stream,
+        ushort value)
+    {
+        // 6502 is little-endian.
+        stream.WriteByte(
+            (byte)(value & 0xFF));
+
+        stream.WriteByte(
+            (byte)(value >> 8));
     }
 
     // ============================================================
@@ -312,50 +726,71 @@ public class Bytecode
     public void PpuAddress(
         ushort address)
     {
-        // IMPORTANT:
-        //
-        // PPUADDR ($2006) requires two writes:
-        //   first = high byte
-        //   second = low byte
-        //
-        // Reading PPUSTATUS ($2002) resets the write toggle.
-        //
-        // Without this, changing from $3F00 to $2000 can cause
-        // the address to be interpreted incorrectly.
-
-        // LDA $2002
+        // Reading PPUSTATUS resets the PPUADDR write toggle.
         Add(OpCode.LdaAbsolute, 0x2002);
-        Add(OpCode.LdaImmediate, (byte)(address >> 8));
-        Add(OpCode.StaAbsolute, 0x2006);
-        Add(OpCode.LdaImmediate, (byte)(address & 0xFF));
-        Add(OpCode.StaAbsolute, 0x2006);
+
+        // High byte.
+        Add(
+            OpCode.LdaImmediate,
+            (byte)(address >> 8));
+
+        Add(
+            OpCode.StaAbsolute,
+            0x2006);
+
+        // Low byte.
+        Add(
+            OpCode.LdaImmediate,
+            (byte)(address & 0xFF));
+
+        Add(
+            OpCode.StaAbsolute,
+            0x2006);
     }
 
-    public void WritePpu(byte value)
+    public void WritePpu(
+        byte value)
     {
-        Add(OpCode.LdaImmediate, value);
-        Add(OpCode.StaAbsolute, 0x2007);
+        Add(
+            OpCode.LdaImmediate,
+            value);
+
+        Add(
+            OpCode.StaAbsolute,
+            0x2007);
     }
 
-    public Variable GetVariable(string name)
+    // ============================================================
+    // Variables
+    // ============================================================
+
+    public Variable GetVariable(
+        string name)
     {
-        var variable = _variables.FirstOrDefault(x => x.Name == name);
+        var variable =
+            _variables.FirstOrDefault(
+                x => x.Name == name);
 
         if (variable == null)
+        {
             throw new InvalidOperationException(
                 $"Variable '{name}' is not declared.");
+        }
 
         return variable;
     }
 
     public Variable DeclareVariable(
-    string name,
-    VariableType type,
-    VariableDeclarationKind kind,
-    bool isArray = false,
-    int length = 1)
+        string name,
+        VariableType type,
+        VariableDeclarationKind kind,
+        bool isArray = false,
+        int length = 1)
     {
-        var variable = _variables.FirstOrDefault(x => x.Name == name);
+        var variable =
+            _variables.FirstOrDefault(
+                x => x.Name == name);
+
         if (variable != null)
         {
             return variable;
@@ -369,6 +804,7 @@ public class Bytecode
             length);
 
         _variables.Add(variable);
+
         UpdateAddresses();
 
         return variable;
@@ -377,11 +813,12 @@ public class Bytecode
     public void UpdateAddresses()
     {
         int address = 0;
+
         foreach (var variable in _variables)
         {
             variable.Address = address;
+
             address += variable.GetSize();
         }
     }
-
 }

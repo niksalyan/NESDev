@@ -7,6 +7,12 @@ namespace NESCompiler;
 
 public class Compiler : AstVisitor
 {
+    private List<Variable> _variables;
+    public List<Variable> Variables => _variables;
+
+    private List<Instruction> _instructions;
+    public List<Instruction> Instructions => _instructions;
+
     private static readonly Parser _parser = new Parser(new ParserOptions()
     {
         AllowTopLevelUsing = true
@@ -24,6 +30,11 @@ public class Compiler : AstVisitor
         Visit(ast);
 
         BuildProgram();
+
+        Debug.WriteLine($"PRG size: {_prg.ToBytecode().Length} bytes");
+
+        _variables = _prg.Variables;
+        _instructions = _prg.Instructions;
 
         var nes = new NesFile
         {
@@ -45,11 +56,13 @@ public class Compiler : AstVisitor
         _prg.Add(OpCode.Sei);
         _prg.Add(OpCode.Cld);
 
-        int waitVBlank = 0; // Not sure yet
-        int _prgP = 0; // This too
+        // This is the instruction we want BPL to jump back to.
+        int waitVBlank = _prg.Instructions.Count;
 
         _prg.Add(OpCode.BitAbsolute, 0x2002);
-        _prg.Add(OpCode.Bpl, (sbyte)(waitVBlank - (_prgP + 2)));
+
+        // Target instruction index.
+        _prg.Add(OpCode.Bpl, waitVBlank);
 
         _prg.Add(OpCode.LdaImmediate, 0x00);
         _prg.Add(OpCode.StaAbsolute, 0x2000);
@@ -68,9 +81,10 @@ public class Compiler : AstVisitor
         _prg.WritePpu((byte)'L' - 32);
         _prg.WritePpu((byte)'L' - 32);
         _prg.WritePpu((byte)'O' - 32);
+
         _prg.WritePpu(0);
-        _prg.WritePpu((byte)243); // Ball tile/sprite
-        _prg.WritePpu((byte)128); // Box tile/sprite
+        _prg.WritePpu(243);
+        _prg.WritePpu(128);
 
         _prg.Add(OpCode.LdaAbsolute, 0x2002);
 
@@ -81,16 +95,8 @@ public class Compiler : AstVisitor
         _prg.Add(OpCode.LdaImmediate, 0x08);
         _prg.Add(OpCode.StaAbsolute, 0x2001);
 
-        int loopAddress = 0; // Need to figure out how to do this
-        ushort cpuAddress = (ushort)(0x8000 + loopAddress);
-
-        _prg.Add(OpCode.JmpAbsolute, cpuAddress);
-
-
-        // This will be done automatically on bytecode generation _prg.ToBytecode();
-        // _prg.WriteVector(0x7FFA, 0x8000);
-        // _prg.WriteVector(0x7FFC, 0x8000); //
-        // _prg.WriteVector(0x7FFE, 0x8000);
+        // Jump back to the first instruction.
+        _prg.Add(OpCode.JmpAbsolute, 0x8000);
     }
 
 
