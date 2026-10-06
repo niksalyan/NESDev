@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="NESCompiler/NESCompiler.csproj" Id="11789cea-629b-4fdb-be97-296b42b85e44" />
+  <Project Path="NESDev/NESDev.csproj" />
+  <Project Path="NESEmulator/NESEmulator.csproj" />
+</Solution>
