@@ -178,22 +178,11 @@ namespace NESCompiler
             Sta(0x2006);
         }
 
-        public void WritePpu(
-            byte value)
+        public void WritePpu(byte value)
         {
-            // LDA #value
-            Emit(
-                0xA9,
-                value);
-
-            // STA $2007
-            Emit(
-                0x8D,
-                0x07,
-                0x20);
+            LdaImmediate(value);
+            Sta(0x2007);
         }
-
-
 
         public void WriteVector(
         int offset,
