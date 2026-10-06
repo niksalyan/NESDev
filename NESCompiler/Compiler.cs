@@ -47,12 +47,8 @@ public class Compiler : AstVisitor
         // CPU initialization
         // --------------------------------------------------------
 
-        // SEI
-        Emit(0x78);
-
-        // CLD
-        Emit(0xD8);
-
+        _prg.Sei();
+        _prg.Cld();
         // --------------------------------------------------------
         // Wait for PPU VBlank
         // --------------------------------------------------------
@@ -81,24 +77,10 @@ public class Compiler : AstVisitor
         // Disable rendering while we configure the PPU
         // --------------------------------------------------------
 
-        // LDA #$00
-        Emit(
-            0xA9,
-            0x00);
+        _prg.Lda(0xA9);
 
-        // STA $2000
-        // PPUCTRL
-        Emit(
-            0x8D,
-            0x00,
-            0x20);
+        _prg.Sta(0x2000);
 
-        // STA $2001
-        // PPUMASK
-        Emit(
-            0x8D,
-            0x01,
-            0x20);
 
         // --------------------------------------------------------
         // Palette

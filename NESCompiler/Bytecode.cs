@@ -90,6 +90,16 @@ namespace NESCompiler
             Emit(value);
         }
 
+        public void Sei()
+        {
+            Emit(0x78);
+        }
+
+        public void Cld()
+        {
+            Emit(0xD8);
+        }
+
         public void Sta(ushort address)
         {
             Emit(0x8D);
