@@ -67,7 +67,9 @@ public class Compiler : AstVisitor
         _prg.WritePpu((byte)'L' - 32);
         _prg.WritePpu((byte)'L' - 32);
         _prg.WritePpu((byte)'O' - 32);
-        _prg.WritePpu((byte)'!' - 32);
+        _prg.WritePpu(0);
+        _prg.WritePpu((byte)243); // Ball tile/sprite
+        _prg.WritePpu((byte)128); // Box tile/sprite
 
         _prg.Lda(0x2002);
 
