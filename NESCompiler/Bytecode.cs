@@ -100,12 +100,26 @@ namespace NESCompiler
             Emit(0xD8);
         }
 
+        public void Bit(ushort address)
+        {
+            Emit(0x2C);
+            Emit((byte)(address & 0xFF));
+            Emit((byte)(address >> 8));
+        }
+
+        public void Bpl(sbyte offset)
+        {
+            Emit(0x10);
+            Emit(unchecked((byte)offset));
+        }
+
         public void Sta(ushort address)
         {
             Emit(0x8D);
             Emit((byte)(address & 0xFF));
             Emit((byte)(address >> 8));
         }
+
 
         public void Lda(ushort address)
         {
@@ -136,6 +150,50 @@ namespace NESCompiler
                 _prg[_p++] = b;
             }
         }
+
+
+        // ============================================================
+        // PPU helpers
+        // ============================================================
+
+        public void PpuAddress(
+            ushort address)
+        {
+            // IMPORTANT:
+            //
+            // PPUADDR ($2006) requires two writes:
+            //   first = high byte
+            //   second = low byte
+            //
+            // Reading PPUSTATUS ($2002) resets the write toggle.
+            //
+            // Without this, changing from $3F00 to $2000 can cause
+            // the address to be interpreted incorrectly.
+
+            // LDA $2002
+            Lda(0x2002);
+            LdaImmediate((byte)(address >> 8));
+            Sta(0x2006);
+            LdaImmediate((byte)(address & 0xFF));
+            Sta(0x2006);
+        }
+
+        public void WritePpu(
+            byte value)
+        {
+            // LDA #value
+            Emit(
+                0xA9,
+                value);
+
+            // STA $2007
+            Emit(
+                0x8D,
+                0x07,
+                0x20);
+        }
+
+
 
         public void WriteVector(
         int offset,
