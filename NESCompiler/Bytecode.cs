@@ -268,78 +268,42 @@ public class Bytecode
     private List<Variable> _variables = [];
 
 
-    public void LdaImmediate(byte value)
-    {
-        Emit(0xA9);
-        Emit(value);
-    }
-
-    public void Sei()
-    {
-        Emit(0x78);
-    }
-
-    public void Cld()
-    {
-        Emit(0xD8);
-    }
-
-    public void Bit(ushort address)
-    {
-        Emit(0x2C);
-        Emit((byte)(address & 0xFF));
-        Emit((byte)(address >> 8));
-    }
-
-    public void Bpl(sbyte offset)
-    {
-        Emit(0x10);
-        Emit(unchecked((byte)offset));
-    }
-
-    public void Sta(ushort address)
-    {
-        Emit(0x8D);
-        Emit((byte)(address & 0xFF));
-        Emit((byte)(address >> 8));
-    }
-
-
-    public void Lda(ushort address)
-    {
-        Emit(0xAD);
-        Emit((byte)(address & 0xFF));
-        Emit((byte)(address >> 8));
-    }
-
-    public void Inc(ushort address)
-    {
-        Emit(0xEE);
-        Emit((byte)(address & 0xFF));
-        Emit((byte)(address >> 8));
-    }
-
-    public void Jmp(ushort address)
-    {
-        Emit(0x4C);
-        Emit((byte)(address & 0xFF));
-        Emit((byte)(address >> 8));
-    }
-
-    public void Emit( // Remove this and adapt to Add
-    params byte[] bytes)
-    {
-        foreach (byte b in bytes)
-        {
-            _prg[_p++] = b;
-        }
-    }
-
     public void Add(OpCode opCode, object? operand = null)
     {
         _instructions.Add(new Instruction(opCode, operand));
     }
 
+
+    public byte[] ToBytecode()
+    {
+        List<byte> bytes = new List<byte>();
+        foreach (var instruction in _instructions)
+        {
+            bytes.Add((byte)instruction.OpCode);
+            if (instruction.Operand != null)
+            {
+                if (instruction.Operand is byte b)
+                {
+                    bytes.Add(b);
+                }
+                else if (instruction.Operand is ushort s)
+                {
+                    bytes.Add((byte)(s & 0xFF));
+                    bytes.Add((byte)(s >> 8));
+                }
+                else if (instruction.Operand is sbyte sb)
+                {
+                    bytes.Add((byte)sb);
+                }
+                else
+                {
+                    throw new InvalidOperationException(
+                        $"Unsupported operand type: {instruction.Operand.GetType()}");
+                }
+            }
+        }
+        return bytes.ToArray();
+    }
 
     // ============================================================
     // PPU helpers
@@ -360,25 +324,17 @@ public class Bytecode
         // the address to be interpreted incorrectly.
 
         // LDA $2002
-        Lda(0x2002);
-        LdaImmediate((byte)(address >> 8));
-        Sta(0x2006);
-        LdaImmediate((byte)(address & 0xFF));
-        Sta(0x2006);
+        Add(OpCode.LdaAbsolute, 0x2002);
+        Add(OpCode.LdaImmediate, (byte)(address >> 8));
+        Add(OpCode.StaAbsolute, 0x2006);
+        Add(OpCode.LdaImmediate, (byte)(address & 0xFF));
+        Add(OpCode.StaAbsolute, 0x2006);
     }
 
     public void WritePpu(byte value)
     {
-        LdaImmediate(value);
-        Sta(0x2007);
-    }
-
-    public void WriteVector(
-    int offset,
-    ushort address)
-    {
-        _prg[offset] = (byte)(address & 0xFF);
-        _prg[offset + 1] = (byte)(address >> 8);
+        Add(OpCode.LdaImmediate, value);
+        Add(OpCode.StaAbsolute, 0x2007);
     }
 
     public Variable GetVariable(string name)
