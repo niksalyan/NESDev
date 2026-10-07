@@ -216,7 +216,7 @@ public class Variable
         (IsArray ? "[" + Length + "]" : "");
 
 
-    public byte Value => Emulator.instance.CPU.ReadMemory((ushort)Address);
+    public byte Value => Emulator.instance?.CPU?.ReadMemory((ushort)Address) ?? 0;
 
     [Browsable(false)]
     public VariableType Type { get; }

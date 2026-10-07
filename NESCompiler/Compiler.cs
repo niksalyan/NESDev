@@ -142,84 +142,45 @@ public class Compiler : AstVisitor
         return null;
     }
 
-    protected override object? VisitIfStatement(Acornima.Ast.IfStatement ifStatement)
+    protected override object? VisitIfStatement(
+    Acornima.Ast.IfStatement ifStatement)
     {
         var test = ifStatement.Test;
 
-        // Handle binary comparisons: == and !=
-        if (test.GetType().Name == "NonLogicalBinaryExpression")
+        if (test is NonLogicalBinaryExpression binary)
         {
-            var leftProp = test.GetType().GetProperty("Left");
-            var rightProp = test.GetType().GetProperty("Right");
-            var opProp = test.GetType().GetProperty("Operator");
+            EmitComparison(binary);
 
-            if (leftProp == null || rightProp == null || opProp == null)
-                throw new NotSupportedException("Unsupported test expression shape.");
+            var branchIndexes =
+                EmitComparisonBranch(binary.Operator);
 
-            var left = (Expression)leftProp.GetValue(test)!;
-            var right = (Expression)rightProp.GetValue(test)!;
-            var op = opProp.GetValue(test)!;
 
-            // Evaluate both expressions using the expression stack.
-            EmitExpression(left);
-            EmitExpression(right);
-
-            // Right operand -> temporary
-            Pop();
-            _prg.Add(OpCode.StaZeroPage, ExpressionTemp);
-
-            // Left operand -> A
-            Pop();
-
-            // Compare A with right operand.
-            _prg.Add(OpCode.CmpZeroPage, ExpressionTemp);
-
-            // Branch when the condition is false.
-            string opName = op.ToString().ToLowerInvariant();
-
-            int branchIndex = _prg.Instructions.Count;
-
-            if (opName.Contains("equal") &&
-                !opName.Contains("not") &&
-                !opName.Contains("inequal") &&
-                !opName.Contains("neq"))
-            {
-                // left == right
-                // BNE means the comparison was false.
-                _prg.Add(OpCode.Bne, 0);
-            }
-            else if (opName.Contains("not") ||
-                     opName.Contains("inequal") ||
-                     opName.Contains("neq"))
-            {
-                // left != right
-                // BEQ means the comparison was false.
-                _prg.Add(OpCode.Beq, 0);
-            }
-            else
-            {
-                throw new NotSupportedException(
-                    $"Comparison operator '{op}' is not supported in if tests.");
-            }
-
-            // Emit the consequent.
+            // Consequent.
             Visit(ifStatement.Consequent);
 
             if (ifStatement.Alternate != null)
             {
-                // After executing the consequent, skip the else block.
+                // Skip else after consequent.
                 int jmpIndex = _prg.Instructions.Count;
-                _prg.Add(OpCode.JmpAbsolute, 0);
 
-                // This is where the false branch should go.
+                _prg.Add(
+                    OpCode.JmpAbsolute,
+                    0);
+
+                // False condition goes here.
                 int elseStart = _prg.Instructions.Count;
 
-                var branchOld = _prg.Instructions[branchIndex];
+                foreach (int index in branchIndexes)
+                {
+                    var old = _prg.Instructions[index];
 
-                _prg.Instructions[branchIndex] =
-                    new Instruction(branchOld.OpCode, elseStart);
+                    _prg.Instructions[index] =
+                        new Instruction(
+                            old.OpCode,
+                            elseStart);
+                }
 
-                // Emit else.
+                // Else.
                 Visit(ifStatement.Alternate);
 
                 // Patch jump over else.
@@ -228,71 +189,334 @@ public class Compiler : AstVisitor
                 var jmpOld = _prg.Instructions[jmpIndex];
 
                 _prg.Instructions[jmpIndex] =
-                    new Instruction(jmpOld.OpCode, afterElse);
+                    new Instruction(
+                        jmpOld.OpCode,
+                        afterElse);
             }
             else
             {
-                // No else: false branch goes after the consequent.
-                int afterConsequent = _prg.Instructions.Count;
+                // No else. False condition skips consequent.
+                int afterConsequent =
+                    _prg.Instructions.Count;
 
-                var branchOld = _prg.Instructions[branchIndex];
+                foreach (int index in branchIndexes)
+                {
+                    var old = _prg.Instructions[index];
 
-                _prg.Instructions[branchIndex] =
-                    new Instruction(branchOld.OpCode, afterConsequent);
+                    _prg.Instructions[index] =
+                        new Instruction(
+                            old.OpCode,
+                            afterConsequent);
+                }
             }
 
             return null;
         }
 
         // Normal boolean/numeric expression.
-        // Evaluate the expression and leave the result in A.
         EmitExpression(test);
         Pop();
 
-        // Zero means false.
         int beqIndex = _prg.Instructions.Count;
 
-        _prg.Add(OpCode.Beq, 0);
+        _prg.Add(
+            OpCode.Beq,
+            0);
 
         // Consequent.
         Visit(ifStatement.Consequent);
 
         if (ifStatement.Alternate != null)
         {
-            // Skip else after executing consequent.
             int jmpIndex = _prg.Instructions.Count;
 
-            _prg.Add(OpCode.JmpAbsolute, 0);
+            _prg.Add(
+                OpCode.JmpAbsolute,
+                0);
 
-            // False condition lands here.
             int elseStart = _prg.Instructions.Count;
 
-            var beqOld = _prg.Instructions[beqIndex];
-
             _prg.Instructions[beqIndex] =
-                new Instruction(beqOld.OpCode, elseStart);
+                new Instruction(
+                    OpCode.Beq,
+                    elseStart);
 
-            // Else.
             Visit(ifStatement.Alternate);
 
-            // Patch jump over else.
             int afterElse = _prg.Instructions.Count;
 
-            var jmpOld = _prg.Instructions[jmpIndex];
-
             _prg.Instructions[jmpIndex] =
-                new Instruction(jmpOld.OpCode, afterElse);
+                new Instruction(
+                    OpCode.JmpAbsolute,
+                    afterElse);
         }
         else
         {
-            // No else: false condition skips the consequent.
-            int afterConsequent = _prg.Instructions.Count;
-
-            var beqOld = _prg.Instructions[beqIndex];
+            int afterConsequent =
+                _prg.Instructions.Count;
 
             _prg.Instructions[beqIndex] =
-                new Instruction(beqOld.OpCode, afterConsequent);
+                new Instruction(
+                    OpCode.Beq,
+                    afterConsequent);
         }
+
+        return null;
+    }
+
+    protected override object? VisitAssignmentExpression(
+    AssignmentExpression assignmentExpression)
+    {
+        if (assignmentExpression.Left is not Identifier identifier)
+            throw new NotSupportedException(
+                "Only simple variable assignments are supported.");
+
+        if (assignmentExpression.Operator != Operator.Assignment)
+            throw new NotSupportedException(
+                $"Assignment operator '{assignmentExpression.Operator}' is not supported.");
+
+        var variable = _prg.GetVariable(identifier.Name);
+
+        EmitExpression(assignmentExpression.Right);
+
+        Pop();
+
+        if (variable.Address <= 0xFF)
+        {
+            _prg.Add(
+                OpCode.StaZeroPage,
+                variable.Address);
+        }
+        else
+        {
+            _prg.Add(
+                OpCode.StaAbsolute,
+                variable.Address);
+        }
+
+        return null;
+    }
+
+    protected override object? VisitWhileStatement(
+    Acornima.Ast.WhileStatement whileStatement)
+    {
+        int conditionStart = _prg.Instructions.Count;
+
+        if (whileStatement.Test is NonLogicalBinaryExpression binary)
+        {
+            EmitExpression(binary.Left);
+            EmitExpression(binary.Right);
+
+            // A = right
+            Pop();
+
+            _prg.Add(
+                OpCode.StaZeroPage,
+                ExpressionTemp);
+
+            // A = left
+            Pop();
+
+            _prg.Add(
+                OpCode.CmpZeroPage,
+                ExpressionTemp);
+
+            int branchIndex = _prg.Instructions.Count;
+
+            // Placeholder. EmitComparisonBranch will emit the
+            // actual branch instructions.
+            EmitComparisonBranch(
+                binary.Operator);
+
+            // We need to patch the generated false branches.
+            // For now, collect them from the emitted range.
+            for (int i = branchIndex;
+                 i < _prg.Instructions.Count;
+                 i++)
+            {
+                var instruction = _prg.Instructions[i];
+
+                if (instruction.OpCode == OpCode.Beq ||
+                    instruction.OpCode == OpCode.Bne ||
+                    instruction.OpCode == OpCode.Bcc ||
+                    instruction.OpCode == OpCode.Bcs)
+                {
+                    _prg.Instructions[i] =
+                        new Instruction(
+                            instruction.OpCode,
+                            -1);
+                }
+            }
+
+            Visit(whileStatement.Body);
+
+            _prg.Add(
+                OpCode.JmpAbsolute,
+                conditionStart);
+
+            int afterWhile = _prg.Instructions.Count;
+
+            // Patch comparison branches to loop exit.
+            for (int i = branchIndex;
+                 i < _prg.Instructions.Count;
+                 i++)
+            {
+                var instruction = _prg.Instructions[i];
+
+                if (instruction.Operand is int operand && operand == -1)
+                {
+                    _prg.Instructions[i] =
+                        new Instruction(
+                            instruction.OpCode,
+                            afterWhile);
+                }
+            }
+
+            return null;
+        }
+
+        // Simple truthy while
+        EmitExpression(whileStatement.Test);
+        Pop();
+
+        int branchIndexSimple = _prg.Instructions.Count;
+
+        _prg.Add(
+            OpCode.Beq,
+            0);
+
+        Visit(whileStatement.Body);
+
+        _prg.Add(
+            OpCode.JmpAbsolute,
+            conditionStart);
+
+        int afterWhileSimple = _prg.Instructions.Count;
+
+        _prg.Instructions[branchIndexSimple] =
+            new Instruction(
+                OpCode.Beq,
+                afterWhileSimple);
+
+        return null;
+    }
+
+    protected override object? VisitForStatement(Acornima.Ast.ForStatement forStatement)
+    {
+        // Initialization
+        if (forStatement.Init != null)
+            Visit(forStatement.Init);
+
+        int conditionStart = _prg.Instructions.Count;
+
+        // Condition
+        if (forStatement.Test != null)
+        {
+            var test = forStatement.Test;
+
+            if (test.GetType().Name == "NonLogicalBinaryExpression")
+            {
+                var leftProp = test.GetType().GetProperty("Left");
+                var rightProp = test.GetType().GetProperty("Right");
+                var opProp = test.GetType().GetProperty("Operator");
+
+                if (leftProp == null || rightProp == null || opProp == null)
+                    throw new NotSupportedException(
+                        "Unsupported for test expression shape.");
+
+                var left = (Expression)leftProp.GetValue(test)!;
+                var right = (Expression)rightProp.GetValue(test)!;
+                var op = opProp.GetValue(test)!;
+
+                EmitExpression(left);
+                EmitExpression(right);
+
+                // A = right
+                Pop();
+
+                _prg.Add(OpCode.StaZeroPage, ExpressionTemp);
+
+                // A = left
+                Pop();
+
+                _prg.Add(OpCode.CmpZeroPage, ExpressionTemp);
+
+                string opName = op.ToString()!.ToLowerInvariant();
+
+                int branchIndex = _prg.Instructions.Count;
+
+                if (opName.Contains("equal") &&
+                    !opName.Contains("not") &&
+                    !opName.Contains("inequal") &&
+                    !opName.Contains("neq"))
+                {
+                    // Exit when left != right
+                    _prg.Add(OpCode.Bne, 0);
+                }
+                else if (opName.Contains("not") ||
+                         opName.Contains("inequal") ||
+                         opName.Contains("neq"))
+                {
+                    // Exit when left == right
+                    _prg.Add(OpCode.Beq, 0);
+                }
+                else
+                {
+                    throw new NotSupportedException(
+                        $"Operator '{op}' is not supported in for tests.");
+                }
+
+                // Body
+                Visit(forStatement.Body);
+
+                // Update
+                if (forStatement.Update != null)
+                    Visit(forStatement.Update);
+
+                // Repeat
+                _prg.Add(OpCode.JmpAbsolute, conditionStart);
+
+                // Patch exit branch
+                int afterFor = _prg.Instructions.Count;
+
+                var branchOld = _prg.Instructions[branchIndex];
+                _prg.Instructions[branchIndex] =
+                    new Instruction(branchOld.OpCode, afterFor);
+
+                return null;
+            }
+
+            // Simple truthy condition
+            EmitExpression(test);
+            Pop();
+
+            int simpleBranchIndex = _prg.Instructions.Count;
+            _prg.Add(OpCode.Beq, 0);
+
+            Visit(forStatement.Body);
+
+            if (forStatement.Update != null)
+                Visit(forStatement.Update);
+
+            _prg.Add(OpCode.JmpAbsolute, conditionStart);
+
+            int simpleAfterFor = _prg.Instructions.Count;
+
+            var simpleBranchOld = _prg.Instructions[simpleBranchIndex];
+            _prg.Instructions[simpleBranchIndex] =
+                new Instruction(simpleBranchOld.OpCode, simpleAfterFor);
+
+            return null;
+        }
+
+        // for (;;)
+        // No condition means infinite loop.
+        Visit(forStatement.Body);
+
+        if (forStatement.Update != null)
+            Visit(forStatement.Update);
+
+        _prg.Add(OpCode.JmpAbsolute, conditionStart);
 
         return null;
     }
@@ -397,6 +621,103 @@ public class Compiler : AstVisitor
         }
     }
 
+    private void EmitComparison(NonLogicalBinaryExpression binary)
+    {
+        EmitExpression(binary.Left);
+        EmitExpression(binary.Right);
+
+        Pop();
+
+        _prg.Add(
+            OpCode.StaZeroPage,
+            ExpressionTemp);
+
+        Pop();
+
+        _prg.Add(
+            OpCode.CmpZeroPage,
+            ExpressionTemp);
+    }
+
+    private List<int> EmitComparisonBranch(Operator op)
+    {
+        var branchIndexes = new List<int>();
+
+        switch (op)
+        {
+            case Operator.Equality:
+                branchIndexes.Add(_prg.Instructions.Count);
+                _prg.Add(OpCode.Bne, 0);
+                break;
+
+            case Operator.Inequality:
+                branchIndexes.Add(_prg.Instructions.Count);
+                _prg.Add(OpCode.Beq, 0);
+                break;
+
+            case Operator.LessThan:
+                branchIndexes.Add(_prg.Instructions.Count);
+                _prg.Add(OpCode.Bcs, 0);
+                break;
+
+            case Operator.GreaterThanOrEqual:
+                branchIndexes.Add(_prg.Instructions.Count);
+                _prg.Add(OpCode.Bcc, 0);
+                break;
+
+            case Operator.GreaterThan:
+                // False when:
+                // left < right
+                // OR
+                // left == right
+
+                branchIndexes.Add(_prg.Instructions.Count);
+                _prg.Add(OpCode.Bcc, 0);
+
+                branchIndexes.Add(_prg.Instructions.Count);
+                _prg.Add(OpCode.Beq, 0);
+                break;
+
+            case Operator.LessThanOrEqual:
+                // False only when left > right.
+                //
+                // C = 0 => left < right => true
+                // C = 1, Z = 1 => equal => true
+                // C = 1, Z = 0 => greater => false
+
+                int bccIndex = _prg.Instructions.Count;
+                _prg.Add(OpCode.Bcc, 0);
+
+                int beqIndex = _prg.Instructions.Count;
+                _prg.Add(OpCode.Beq, 0);
+
+                // If neither BCC nor BEQ was taken,
+                // left > right, so branch false.
+                branchIndexes.Add(_prg.Instructions.Count);
+                _prg.Add(OpCode.JmpAbsolute, 0);
+
+                // Both BCC and BEQ should continue here.
+                int trueAddress = _prg.Instructions.Count;
+
+                _prg.Instructions[bccIndex] =
+                    new Instruction(
+                        _prg.Instructions[bccIndex].OpCode,
+                        trueAddress);
+
+                _prg.Instructions[beqIndex] =
+                    new Instruction(
+                        _prg.Instructions[beqIndex].OpCode,
+                        trueAddress);
+
+                break;
+
+            default:
+                throw new NotSupportedException(
+                    $"Comparison operator '{op}' is not supported.");
+        }
+
+        return branchIndexes;
+    }
     private void EmitExpression(Expression expression)
     {
         if (expression.GetType().Name == "NonLogicalBinaryExpression")
