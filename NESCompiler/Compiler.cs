@@ -13,7 +13,12 @@ public class Compiler : AstVisitor
     public List<Instruction> Instructions => _prg?.Instructions ?? [];
 
     private CompilerFunctions _compilerFunctions;
-    private const int ExprTempAddress = 0x0200;
+    private const byte ExpressionStackBase = 0xF0;
+    private const byte ExpressionStackSize = 16;
+
+    private const byte ExpressionTemp = 0xEF;
+
+    private byte _expressionStackDepth;
 
     private static readonly Parser _parser = new Parser(new ParserOptions()
     {
@@ -55,6 +60,8 @@ public class Compiler : AstVisitor
     {
         _prg.Add(OpCode.Sei);
         _prg.Add(OpCode.Cld);
+        _prg.Add(OpCode.LdxImmediate, 0);
+
 
         // This is the instruction we want BPL to jump back to.
         int waitVBlank = _prg.Instructions.Count;
@@ -113,7 +120,22 @@ public class Compiler : AstVisitor
 
 
             var variable = _prg.DeclareVariable(identifier.Name, VariableType.Byte, VariableDeclarationKind.Var);
-            EmitByteValue(declaration.Init, variable);
+            EmitExpression(declaration.Init);
+
+            Pop();
+
+            if (variable.Address <= 0xFF)
+            {
+                _prg.Add(
+                    OpCode.StaZeroPage,
+                    variable.Address);
+            }
+            else
+            {
+                _prg.Add(
+                    OpCode.StaAbsolute,
+                    variable.Address);
+            }
 
         }
 
@@ -390,140 +412,6 @@ public class Compiler : AstVisitor
         return VariableType.None;
     }
 
-    private void EmitByteValue(
-    Expression expression,
-    Variable destination)
-    {
-        switch (expression)
-        {
-            case Literal literal:
-                {
-                    byte value = Convert.ToByte(literal.Value);
-
-                    _prg.Add(
-                        OpCode.LdaImmediate,
-                        value);
-
-                    break;
-                }
-
-            case Identifier identifier:
-                {
-                    var source = _prg.GetVariable(identifier.Name);
-
-                    _prg.Add(
-                        OpCode.LdaZeroPage,
-                        source.Address);
-
-                    break;
-                }
-
-            case BinaryExpression binary:
-                {
-                    // Evaluate binary expression so result is left in A.
-                    Visit(binary);
-                    break;
-                }
-
-            default:
-                // Handle parser's NonLogicalBinaryExpression (e.g., for + and -)
-                if (expression.GetType().Name == "NonLogicalBinaryExpression")
-                {
-                    var leftProp = expression.GetType().GetProperty("Left");
-                    var rightProp = expression.GetType().GetProperty("Right");
-                    var opProp = expression.GetType().GetProperty("Operator");
-
-                    if (leftProp == null || rightProp == null || opProp == null)
-                        throw new NotSupportedException("Unsupported non-logical binary expression shape.");
-
-                    var left = (Expression)leftProp.GetValue(expression)!;
-                    var right = (Expression)rightProp.GetValue(expression)!;
-                    var op = opProp.GetValue(expression)!;
-
-                    string opName = op.ToString().ToLowerInvariant();
-
-                    if (opName.Contains("add") || opName.Contains("+"))
-                    {
-                        // left + right
-                        if (right is Literal litRight)
-                        {
-                            LoadByte(left);
-                            _prg.Add(OpCode.Clc);
-                            _prg.Add(OpCode.AdcImmediate, Convert.ToByte(litRight.Value));
-                        }
-                        else if (right is Identifier idRight)
-                        {
-                            LoadByte(left);
-                            _prg.Add(OpCode.Clc);
-                            var src = _prg.GetVariable(idRight.Name);
-                            if (src.Address <= 0xFF)
-                                _prg.Add(OpCode.AdcZeroPage, src.Address);
-                            else
-                                _prg.Add(OpCode.AdcAbsolute, src.Address);
-                        }
-                        else
-                        {
-                            EmitExpressionToAddress(right, ExprTempAddress);
-                            LoadByte(left);
-                            _prg.Add(OpCode.Clc);
-                            _prg.Add(OpCode.AdcAbsolute, ExprTempAddress);
-                        }
-
-                        break;
-                    }
-
-                    if (opName.Contains("sub") || opName.Contains("-"))
-                    {
-                        // left - right
-                        if (right is Literal litR)
-                        {
-                            LoadByte(left);
-                            _prg.Add(OpCode.Sec);
-                            _prg.Add(OpCode.SbcImmediate, Convert.ToByte(litR.Value));
-                        }
-                        else if (right is Identifier idR)
-                        {
-                            LoadByte(left);
-                            _prg.Add(OpCode.Sec);
-                            var src = _prg.GetVariable(idR.Name);
-                            if (src.Address <= 0xFF)
-                                _prg.Add(OpCode.SbcZeroPage, src.Address);
-                            else
-                                _prg.Add(OpCode.SbcAbsolute, src.Address);
-                        }
-                        else
-                        {
-                            EmitExpressionToAddress(right, ExprTempAddress);
-                            LoadByte(left);
-                            _prg.Add(OpCode.Sec);
-                            _prg.Add(OpCode.SbcAbsolute, ExprTempAddress);
-                        }
-
-                        break;
-                    }
-
-                    throw new NotSupportedException($"Operator '{op}' is not supported in non-logical binary expression.");
-                }
-
-                throw new NotSupportedException(
-                    $"Expression '{expression.GetType().Name}' " +
-                    "is not supported yet.");
-        }
-
-        if (destination.Address <= 0xFF)
-        {
-            _prg.Add(
-                OpCode.StaZeroPage,
-                destination.Address);
-        }
-        else
-        {
-            _prg.Add(
-                OpCode.StaAbsolute,
-                destination.Address);
-        }
-    }
-
     // Evaluate expression and store accumulator A into the given address.
     private void EmitExpressionToAddress(Expression expression, int address)
     {
@@ -633,31 +521,27 @@ public class Compiler : AstVisitor
             _prg.Add(OpCode.StaAbsolute, address);
     }
 
-    private void LoadByte(Expression expression)
+    private void EmitExpression(Expression expression)
     {
+        if (expression.GetType().Name == "NonLogicalBinaryExpression")
+        {
+            EmitNonLogicalBinaryExpression(expression);
+            return;
+        }
+
         switch (expression)
         {
             case Literal literal:
-                {
-                    byte value = Convert.ToByte(literal.Value);
+                _prg.Add(
+                    OpCode.LdaImmediate,
+                    Convert.ToByte(literal.Value));
 
-                    _prg.Add(
-                        OpCode.LdaImmediate,
-                        value);
-
-                    return;
-                }
+                Push();
+                return;
 
             case Identifier identifier:
                 {
-                    var variable = _prg.Variables.FirstOrDefault(
-                        x => x.Name == identifier.Name);
-
-                    if (variable == null)
-                    {
-                        throw new InvalidOperationException(
-                            $"Variable '{identifier.Name}' is not declared.");
-                    }
+                    var variable = _prg.GetVariable(identifier.Name);
 
                     if (variable.Address <= 0xFF)
                     {
@@ -672,13 +556,133 @@ public class Compiler : AstVisitor
                             variable.Address);
                     }
 
+                    Push();
                     return;
                 }
+
+            case BinaryExpression binary:
+                EmitBinaryExpression(binary);
+                return;
 
             default:
                 throw new NotSupportedException(
                     $"Expression '{expression.GetType().Name}' is not supported.");
         }
+    }
+
+    private void EmitBinaryExpression(BinaryExpression expression)
+    {
+        EmitExpression(expression.Left);
+        EmitExpression(expression.Right);
+
+        switch (expression.Operator)
+        {
+            case Operator.Addition:
+                EmitAdd();
+                break;
+
+            case Operator.Subtraction:
+                EmitSubtract();
+                break;
+            case Operator.Multiplication:
+                EmitMultiply();
+                break;
+
+            default:
+                throw new NotSupportedException(
+                    $"Operator '{expression.Operator}' is not supported.");
+        }
+    }
+
+    private void EmitAdd()
+    {
+        // Stack:
+        // [left, right]
+
+        Pop();       // A = right
+        _prg.Add(OpCode.StaZeroPage, ExpressionTemp);
+
+        Pop();       // A = left
+
+        _prg.Add(OpCode.Clc);
+        _prg.Add(OpCode.AdcZeroPage, ExpressionTemp);
+
+        Push();
+    }
+
+    private void EmitSubtract()
+    {
+        // Stack:
+        // [left, right]
+
+        Pop();       // A = right
+        _prg.Add(OpCode.StaZeroPage, ExpressionTemp);
+
+        Pop();       // A = left
+
+        _prg.Add(OpCode.Sec);
+        _prg.Add(OpCode.SbcZeroPage, ExpressionTemp);
+
+        Push();
+    }
+
+    private void EmitNonLogicalBinaryExpression(Expression expression)
+    {
+        var leftProp = expression.GetType().GetProperty("Left");
+        var rightProp = expression.GetType().GetProperty("Right");
+        var opProp = expression.GetType().GetProperty("Operator");
+
+        if (leftProp == null || rightProp == null || opProp == null)
+            throw new NotSupportedException(
+                "Unsupported non-logical binary expression shape.");
+
+        var left = (Expression)leftProp.GetValue(expression)!;
+        var right = (Expression)rightProp.GetValue(expression)!;
+        var op = opProp.GetValue(expression)!;
+
+        EmitExpression(left);
+        EmitExpression(right);
+
+        string opName = op.ToString()!.ToLowerInvariant();
+
+        if (opName.Contains("add") || opName.Contains("+"))
+        {
+            EmitAdd();
+            return;
+        }
+
+        if (opName.Contains("sub") || opName.Contains("-"))
+        {
+            EmitSubtract();
+            return;
+        }
+
+        throw new NotSupportedException(
+            $"Operator '{op}' is not supported.");
+    }
+
+    private void Push()
+    {
+        _prg.Add(OpCode.StaZeroPageX, ExpressionStackBase);
+        _prg.Add(OpCode.Inx);
+
+        _expressionStackDepth++;
+
+        if (_expressionStackDepth > ExpressionStackSize)
+            throw new InvalidOperationException(
+                "Expression stack overflow.");
+    }
+
+    private void Pop()
+    {
+        if (_expressionStackDepth == 0)
+            throw new InvalidOperationException(
+                "Expression stack underflow.");
+
+        _prg.Add(OpCode.Dex);
+        _prg.Add(OpCode.LdaZeroPageX, ExpressionStackBase);
+
+        _expressionStackDepth--;
     }
 
     public string GetText(Acornima.Range range)

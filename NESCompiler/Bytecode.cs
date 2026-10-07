@@ -826,7 +826,7 @@ public class Bytecode
     public void UpdateAddresses()
     {
         int zeroAddress = 0;
-        int upperAddress = 513;
+        int upperAddress = 512;
 
         foreach (var variable in _variables)
         {
