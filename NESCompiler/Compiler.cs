@@ -31,7 +31,7 @@ public class Compiler : AstVisitor
     {
         _src = source;
         _prg = new Bytecode();
-
+        _expressionStackDepth = 0;
         _compilerFunctions = new CompilerFunctions(_prg);
         _prg.Variables.Clear();
 
@@ -144,13 +144,11 @@ public class Compiler : AstVisitor
 
     protected override object? VisitIfStatement(Acornima.Ast.IfStatement ifStatement)
     {
-        // Special-case non-logical binary expressions (comparisons) because
-        // the AST may represent them with a different node type.
         var test = ifStatement.Test;
 
+        // Handle binary comparisons: == and !=
         if (test.GetType().Name == "NonLogicalBinaryExpression")
         {
-            // Use reflection to access Left, Right and Operator
             var leftProp = test.GetType().GetProperty("Left");
             var rightProp = test.GetType().GetProperty("Right");
             var opProp = test.GetType().GetProperty("Operator");
@@ -162,45 +160,40 @@ public class Compiler : AstVisitor
             var right = (Expression)rightProp.GetValue(test)!;
             var op = opProp.GetValue(test)!;
 
-            // Ensure accumulator contains left value.
-            // If left is a simple expression, load it; otherwise let Visit(left) produce code that leaves A set.
+            // Evaluate both expressions using the expression stack.
             EmitExpression(left);
+            EmitExpression(right);
+
+            // Right operand -> temporary
+            Pop();
+            _prg.Add(OpCode.StaZeroPage, ExpressionTemp);
+
+            // Left operand -> A
             Pop();
 
-            // Emit CMP depending on right kind
-            if (right is Literal lit)
-            {
-                _prg.Add(OpCode.CmpImmediate, Convert.ToByte(lit.Value));
-            }
-            else if (right is Identifier id)
-            {
-                var src = _prg.GetVariable(id.Name);
-                if (src.Address <= 0xFF)
-                    _prg.Add(OpCode.CmpZeroPage, src.Address);
-                else
-                    _prg.Add(OpCode.CmpAbsolute, src.Address);
-            }
-            else
-            {
-                // Complex right: evaluate into fixed scratch then CMP scratch
-                EmitExpressionToAddress(right, ExpressionTemp);
-                _prg.Add(OpCode.CmpAbsolute, ExpressionTemp);
-            }
+            // Compare A with right operand.
+            _prg.Add(OpCode.CmpZeroPage, ExpressionTemp);
 
-            // Decide branch opcode based on operator name (best-effort)
+            // Branch when the condition is false.
             string opName = op.ToString().ToLowerInvariant();
-            bool isEquality = opName.Contains("equal");
-            bool isNegation = opName.Contains("not") || opName.Contains("inequal") || opName.Contains("neq");
 
             int branchIndex = _prg.Instructions.Count;
-            if (isEquality && !isNegation)
+
+            if (opName.Contains("equal") &&
+                !opName.Contains("not") &&
+                !opName.Contains("inequal") &&
+                !opName.Contains("neq"))
             {
-                // if (left == right) -> execute consequent; jump to else when comparison is false
+                // left == right
+                // BNE means the comparison was false.
                 _prg.Add(OpCode.Bne, 0);
             }
-            else if (isEquality && isNegation)
+            else if (opName.Contains("not") ||
+                     opName.Contains("inequal") ||
+                     opName.Contains("neq"))
             {
-                // if (left != right) -> execute consequent; jump to else when equal
+                // left != right
+                // BEQ means the comparison was false.
                 _prg.Add(OpCode.Beq, 0);
             }
             else
@@ -209,64 +202,96 @@ public class Compiler : AstVisitor
                     $"Comparison operator '{op}' is not supported in if tests.");
             }
 
-            // Visit consequent
+            // Emit the consequent.
             Visit(ifStatement.Consequent);
 
             if (ifStatement.Alternate != null)
             {
+                // After executing the consequent, skip the else block.
                 int jmpIndex = _prg.Instructions.Count;
                 _prg.Add(OpCode.JmpAbsolute, 0);
 
+                // This is where the false branch should go.
                 int elseStart = _prg.Instructions.Count;
-                var branchOld = _prg.Instructions[branchIndex];
-                _prg.Instructions[branchIndex] = new Instruction(branchOld.OpCode, elseStart);
 
+                var branchOld = _prg.Instructions[branchIndex];
+
+                _prg.Instructions[branchIndex] =
+                    new Instruction(branchOld.OpCode, elseStart);
+
+                // Emit else.
                 Visit(ifStatement.Alternate);
 
+                // Patch jump over else.
                 int afterElse = _prg.Instructions.Count;
+
                 var jmpOld = _prg.Instructions[jmpIndex];
-                _prg.Instructions[jmpIndex] = new Instruction(jmpOld.OpCode, afterElse);
+
+                _prg.Instructions[jmpIndex] =
+                    new Instruction(jmpOld.OpCode, afterElse);
             }
             else
             {
+                // No else: false branch goes after the consequent.
                 int afterConsequent = _prg.Instructions.Count;
-                var branchOld2 = _prg.Instructions[branchIndex];
-                _prg.Instructions[branchIndex] = new Instruction(branchOld2.OpCode, afterConsequent);
+
+                var branchOld = _prg.Instructions[branchIndex];
+
+                _prg.Instructions[branchIndex] =
+                    new Instruction(branchOld.OpCode, afterConsequent);
             }
 
             return null;
         }
 
-        // Fallback: evaluate test into A and branch if zero (false)
-        // If Visit(test) leaves a value in memory, ensure A contains the test value.
+        // Normal boolean/numeric expression.
+        // Evaluate the expression and leave the result in A.
         EmitExpression(test);
         Pop();
 
+        // Zero means false.
         int beqIndex = _prg.Instructions.Count;
-        _prg.Add(OpCode.Beq, 0); // jump when zero (false)
 
+        _prg.Add(OpCode.Beq, 0);
+
+        // Consequent.
         Visit(ifStatement.Consequent);
 
         if (ifStatement.Alternate != null)
         {
+            // Skip else after executing consequent.
             int jmpIndex = _prg.Instructions.Count;
+
             _prg.Add(OpCode.JmpAbsolute, 0);
 
+            // False condition lands here.
             int elseStart = _prg.Instructions.Count;
-            var beqOld = _prg.Instructions[beqIndex];
-            _prg.Instructions[beqIndex] = new Instruction(beqOld.OpCode, elseStart);
 
+            var beqOld = _prg.Instructions[beqIndex];
+
+            _prg.Instructions[beqIndex] =
+                new Instruction(beqOld.OpCode, elseStart);
+
+            // Else.
             Visit(ifStatement.Alternate);
 
+            // Patch jump over else.
             int afterElse = _prg.Instructions.Count;
+
             var jmpOld = _prg.Instructions[jmpIndex];
-            _prg.Instructions[jmpIndex] = new Instruction(jmpOld.OpCode, afterElse);
+
+            _prg.Instructions[jmpIndex] =
+                new Instruction(jmpOld.OpCode, afterElse);
         }
         else
         {
+            // No else: false condition skips the consequent.
             int afterConsequent = _prg.Instructions.Count;
-            var beqOld2 = _prg.Instructions[beqIndex];
-            _prg.Instructions[beqIndex] = new Instruction(beqOld2.OpCode, afterConsequent);
+
+            var beqOld = _prg.Instructions[beqIndex];
+
+            _prg.Instructions[beqIndex] =
+                new Instruction(beqOld.OpCode, afterConsequent);
         }
 
         return null;
@@ -333,6 +358,42 @@ public class Compiler : AstVisitor
         else
         {
             _prg.Add(OpCode.StaAbsolute, address);
+        }
+    }
+
+    private void EmitComparison(
+    Expression left,
+    Expression right,
+    Operator op,
+    int falseAddress)
+    {
+        EmitExpression(left);
+        EmitExpression(right);
+
+        // Right operand -> temporary
+        Pop();
+        _prg.Add(OpCode.StaZeroPage, ExpressionTemp);
+
+        // Left operand -> A
+        Pop();
+
+        _prg.Add(
+            OpCode.CmpZeroPage,
+            ExpressionTemp);
+
+        switch (op)
+        {
+            case Operator.Equality:
+                _prg.Add(OpCode.Bne, falseAddress);
+                break;
+
+            case Operator.Inequality:
+                _prg.Add(OpCode.Beq, falseAddress);
+                break;
+
+            default:
+                throw new NotSupportedException(
+                    $"Comparison operator '{op}' is not supported.");
         }
     }
 
