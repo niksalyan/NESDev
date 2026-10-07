@@ -36,6 +36,7 @@
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(675, 335);
             Name = "DEmulator";
+            Resize += DEmulator_Resize;
             ResumeLayout(false);
         }
 

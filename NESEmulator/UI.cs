@@ -116,54 +116,81 @@ namespace dotNES
             }
         }
 
+        private CancellationTokenSource? _renderCts;
+        private Emulator? _emu;
+
         public void BootCartridge(byte[] raw)
         {
             Debug.WriteLine($"Booting cartridge of size {raw.Length} bytes");
-            _renderThread?.Interrupt();
-            
-            emu = new Emulator(raw, _controller);
+
+            // Stop previous emulator
+            _renderCts?.Cancel();
+
+            // Create the new emulator locally
+            var emulator = new Emulator(raw, _controller);
+            _emu = emulator;
+
+            var cts = new CancellationTokenSource();
+            _renderCts = cts;
+
             _renderThread = new Thread(() =>
             {
                 gameStarted = true;
-                Console.WriteLine(emu.Cartridge);
-                Stopwatch s = new Stopwatch();
-                Stopwatch s0 = new Stopwatch();
+
                 try
                 {
-                    while (_rendererRunning)
-                {
-                    if (suspended)
-                    {
-                        Thread.Sleep(100);
-                        continue;
-                    }
+                    Console.WriteLine(emulator.Cartridge);
 
-                    s.Restart();
-                    for (int i = 0; i < 60 && !suspended; i++)
-                    {
-                        s0.Restart();
-                        emu.PPU.ProcessFrame();
-                        rawBitmap = emu.PPU.RawBitmap;
-                        Invoke((MethodInvoker)_renderer.Draw);
-                        s0.Stop();
-                        Thread.Sleep(Math.Max((int)(980 / 60.0 - s0.ElapsedMilliseconds), 0) / activeSpeed);
-                    }
-                    s.Stop();
-                    Console.WriteLine($"60 frames in {s.ElapsedMilliseconds}ms");
-                }
-                }
-                catch (ThreadInterruptedException)
-                {
+                    Stopwatch s = new();
+                    Stopwatch s0 = new();
 
-                    
-                    // Thread was interrupted to stop rendering; exit gracefully
+                    while (!cts.Token.IsCancellationRequested && _rendererRunning)
+                    {
+                        if (suspended)
+                        {
+                            Thread.Sleep(100);
+                            continue;
+                        }
+
+                        s.Restart();
+
+                        for (int i = 0; i < 60 &&
+                             !suspended &&
+                             !cts.Token.IsCancellationRequested;
+                             i++)
+                        {
+                            s0.Restart();
+
+                            emulator.PPU.ProcessFrame();
+                            rawBitmap = emulator.PPU.RawBitmap;
+
+                            Invoke((MethodInvoker)_renderer.Draw);
+
+                            s0.Stop();
+
+                            int delay = Math.Max(
+                                (int)(980 / 60.0 - s0.ElapsedMilliseconds),
+                                0);
+
+                            Thread.Sleep(delay / activeSpeed);
+                        }
+
+                        s.Stop();
+
+                        Debug.WriteLine(
+                            $"60 frames in {s.ElapsedMilliseconds}ms");
+                    }
                 }
                 catch (Exception ex)
                 {
                     Debug.WriteLine($"Render thread error: {ex}");
                 }
-                });
-            // mark as background so it won't block process exit
+                finally
+                {
+                    cts.Dispose();
+                }
+            });
+
             _renderThread.IsBackground = true;
             _renderThread.Start();
         }

@@ -25,7 +25,7 @@ namespace NTOSDev.Components
 
             Emulator = new UI();
 
-            Emulator.Dock = DockStyle.Fill;
+            
             Controls.Add(Emulator);
 
         }
@@ -36,5 +36,24 @@ namespace NTOSDev.Components
             instance?.Emulator?.BootCartridge(cartridge);
         }
 
+        private void DEmulator_Resize(object sender, EventArgs e)
+        {
+            const float aspectRatio = 4f / 3f;
+
+            int width = ClientSize.Width;
+            int height = (int)(width / aspectRatio);
+
+            if (height > ClientSize.Height)
+            {
+                height = ClientSize.Height;
+                width = (int)(height * aspectRatio);
+            }
+
+            Emulator.Size = new Size(width, height);
+
+            Emulator.Location = new Point(
+                (ClientSize.Width - width) / 2,
+                (ClientSize.Height - height) / 2);
+        }
     }
 }

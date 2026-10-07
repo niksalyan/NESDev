@@ -2,16 +2,17 @@
 using Acornima.Ast;
 using com.clusterrr.Famicom.Containers;
 using System.Diagnostics;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace NESCompiler;
 
 public class Compiler : AstVisitor
 {
-    private List<Variable> _variables;
-    public List<Variable> Variables => _variables;
+    public List<Variable> Variables => _prg?.Variables ?? [];
 
-    private List<Instruction> _instructions;
-    public List<Instruction> Instructions => _instructions;
+    public List<Instruction> Instructions => _prg?.Instructions ?? [];
+
+    private CompilerFunctions _compilerFunctions;
 
     private static readonly Parser _parser = new Parser(new ParserOptions()
     {
@@ -24,17 +25,14 @@ public class Compiler : AstVisitor
     {
         _src = source;
         _prg = new Bytecode();
-        
 
-        Node ast = _parser.ParseScript(_src);
-        Visit(ast);
+        _compilerFunctions = new CompilerFunctions(_prg);
+
+        
 
         BuildProgram();
 
         Debug.WriteLine($"PRG size: {_prg.ToBytecode().Length} bytes");
-
-        _variables = _prg.Variables;
-        _instructions = _prg.Instructions;
 
         var nes = new NesFile
         {
@@ -76,15 +74,14 @@ public class Compiler : AstVisitor
 
         _prg.PpuAddress(0x2090);
 
-        _prg.WritePpu((byte)'H' - 32);
-        _prg.WritePpu((byte)'E' - 32);
-        _prg.WritePpu((byte)'L' - 32);
-        _prg.WritePpu((byte)'L' - 32);
-        _prg.WritePpu((byte)'O' - 32);
+        Node ast = _parser.ParseScript(_src);
+        Visit(ast);
 
-        _prg.WritePpu(0);
+        
+
+        /*_prg.WritePpu(0);
         _prg.WritePpu(243);
-        _prg.WritePpu(128);
+        _prg.WritePpu(128);*/
 
         _prg.Add(OpCode.LdaAbsolute, 0x2002);
 
@@ -96,9 +93,158 @@ public class Compiler : AstVisitor
         _prg.Add(OpCode.StaAbsolute, 0x2001);
 
         // Jump back to the first instruction.
-        _prg.Add(OpCode.JmpAbsolute, 0x8000);
+        _prg.Add(OpCode.JmpAbsolute, 0);
     }
 
+    protected override object? VisitVariableDeclaration(
+    VariableDeclaration variableDeclaration)
+    {
+        foreach (var declaration in variableDeclaration.Declarations)
+        {
+            if (declaration.Id is not Identifier identifier)
+                throw new NotSupportedException(
+                    "Only simple variables are supported.");
+
+            if (declaration.Init == null)
+                throw new InvalidOperationException(
+                    $"Variable '{identifier.Name}' must have a value.");
+
+
+            var variable = _prg.DeclareVariable(identifier.Name, VariableType.Byte, VariableDeclarationKind.Var);
+            EmitByteValue(declaration.Init, variable);
+
+        }
+
+        return null;
+    }
+
+    private void VisitExpression(BinaryExpression expression)
+    {
+        LoadByte(expression.Left);
+
+        switch (expression.Operator)
+        {
+            case BinaryOperator.Plus:
+                _prg.Add(OpCode.Clc);
+                LoadByte(expression.Right);
+                _prg.Add(OpCode.AdcZeroPage, GetVariable(
+                    ((Identifier)expression.Right).Name).Address);
+                break;
+
+            case BinaryOperator.Minus:
+                _prg.Add(OpCode.Sec);
+                LoadByte(expression.Right);
+                _prg.Add(OpCode.SbcZeroPage, GetVariable(
+                    ((Identifier)expression.Right).Name).Address);
+                break;
+
+            default:
+                throw new NotSupportedException(
+                    $"Unsupported operator: {expression.Operator}");
+        }
+    }
+
+    private void VisitIf(IfStatement ifStatement)
+    {
+        EmitCondition(ifStatement.Test);
+
+        int skipBody = _prg.Instructions.Count;
+
+        // We don't know the target yet.
+        // EmitCondition will eventually branch here.
+
+        Visit(ifStatement.Consequent);
+
+        // Later:
+        // branch operand = skipBody
+    }
+
+    protected override object? VisitCallExpression(
+    CallExpression callExpression)
+    {
+        if (callExpression.Callee is not Identifier identifier)
+            throw new InvalidOperationException(
+                "Only named function calls are supported.");
+
+        string functionName = identifier.Name;
+
+        // ------------------------------------------------------------
+        // User-defined function / subroutine
+        // ------------------------------------------------------------
+
+        /*if (_functions.TryGetValue(
+                functionName,
+                out int userFunctionIndex))
+        {
+            if (callExpression.Arguments.Count != 0)
+                throw new InvalidOperationException(
+                    $"Function '{functionName}' does not accept arguments.");
+
+            Add(
+                OpCode.CallSubroutine,
+                userFunctionIndex);
+
+            return VariableType.None;
+        }*/
+
+        // ------------------------------------------------------------
+        // VM function
+        // ------------------------------------------------------------
+
+        var arguments = new List<object?>();
+
+        foreach (var argument in callExpression.Arguments)
+        {
+            arguments.Add(Visit(argument));
+        }
+
+        _compilerFunctions.Execute(
+            functionName,
+            arguments.ToArray());
+
+        // Call function here
+
+        return VariableType.None;
+    }
+
+    private void EmitByteValue(
+    Expression expression,
+    Variable destination)
+    {
+        switch (expression)
+        {
+            case Literal literal:
+                {
+                    byte value = Convert.ToByte(literal.Value);
+
+                    _prg.Add(
+                        OpCode.LdaImmediate,
+                        value);
+
+                    break;
+                }
+
+            case Identifier identifier:
+                {
+                    var source = _prg.GetVariable(identifier.Name);
+
+                    _prg.Add(
+                        OpCode.LdaZeroPage,
+                        source.Address);
+
+                    break;
+                }
+
+            default:
+                throw new NotSupportedException(
+                    $"Expression '{expression.GetType().Name}' " +
+                    "is not supported yet.");
+        }
+
+        _prg.Add(
+            OpCode.StaZeroPage,
+            destination.Address);
+    }
 
     public string GetText(Acornima.Range range)
     {

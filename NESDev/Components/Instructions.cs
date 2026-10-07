@@ -16,14 +16,7 @@ namespace NTOSDev.Components
         public Instructions()
         {
             InitializeComponent();
-            dataGridView1.DataSource = NES.Compiler.Instructions;
-        }
-
-        protected override void OnEnter(EventArgs e)
-        {
-            base.OnEnter(e);
-            Debug.WriteLine("Instructions window activated.");
-            dataGridView1.DataSource = NES.Compiler.Instructions;
+            dataGridView1.DataSource = NES.Instructions;
         }
 
 

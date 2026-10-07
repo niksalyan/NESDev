@@ -3,6 +3,8 @@
 using NESCompiler;
 using NTOSDev.Components;
 using NTOSDev.Libs;
+using System.Collections.Immutable;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
 using WeifenLuo.WinFormsUI.Docking;
@@ -18,6 +20,8 @@ namespace NTOSDev
 
         public static Compiler Compiler = new Compiler();
 
+        public static BindingList<Instruction> Instructions = new BindingList<Instruction>();
+        public static BindingList<Variable> Variables = new BindingList<Variable>();
 
         public static string LastProject { get => RegistryHelper.ReadRegistry("NESLastProject"); set => RegistryHelper.WriteRegistry("NESLastProject", value); }
 
@@ -25,6 +29,15 @@ namespace NTOSDev
         public static void Compile(string src)
         {
             var cartridge = Compiler.Compile(src);
+
+
+            Instructions.Clear();
+            Variables.Clear();
+            foreach(var i in Compiler.Instructions) Instructions.Add(i);
+            foreach(var v in Compiler.Variables) Variables.Add(v);
+
+
+            Debug.WriteLine("POPULATED: " + Instructions.Count);
 
             Debug.WriteLine($"Cartridge size: {cartridge.Length} bytes");
 

@@ -3,6 +3,7 @@ using Microsoft.VisualBasic.ApplicationServices;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Security.Policy;
@@ -572,11 +573,25 @@ public class Bytecode
             case OpCode.IncAbsolute:
             case OpCode.IncAbsoluteX:
             case OpCode.Jsr:
-            case OpCode.JmpAbsolute:
             case OpCode.JmpIndirect:
                 WriteUInt16Operand(
                     stream,
                     instruction.Operand);
+                break;
+
+            case OpCode.JmpAbsolute:
+
+                int targetInstruction = (int)instruction.Operand;
+
+
+
+                int targetAddress = Instructions[targetInstruction].Address;
+                Debug.WriteLine($"Target instruction:{instruction.OpCode}  {targetInstruction} {targetAddress}");
+
+                WriteUInt16Operand(
+                    stream,
+                    targetAddress);
+
                 break;
 
             case OpCode.Brk:
@@ -793,7 +808,8 @@ public class Bytecode
 
         if (variable != null)
         {
-            return variable;
+            throw new InvalidOperationException(
+                $"Variable '{name}' has already been declared.");
         }
 
         variable = new Variable(
