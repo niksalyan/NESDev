@@ -13,4 +13,8 @@
     <PackageReference Include="NesContainers" Version="1.1.9" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\NESEmulator\NESEmulator.csproj" />
+  </ItemGroup>
+
 </Project>

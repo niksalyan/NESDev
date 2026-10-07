@@ -2,7 +2,7 @@
 
 namespace dotNES.Controllers
 {
-    interface IController
+    public interface IController
     {
         void Strobe(bool on);
 

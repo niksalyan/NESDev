@@ -1,13 +1,7 @@
 ﻿using Acornima.Ast;
-using Microsoft.VisualBasic.ApplicationServices;
-using System;
-using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
-using System.IO;
-using System.Linq;
-using System.Security.Policy;
-using static System.Windows.Forms.VisualStyles.VisualStyleElement.TreeView;
+using dotNES;
 
 namespace NESCompiler;
 
@@ -220,6 +214,9 @@ public class Variable
         "." +
         Type.ToString() +
         (IsArray ? "[" + Length + "]" : "");
+
+
+    public byte Value => Emulator.instance.CPU.ReadMemory((ushort)Address);
 
     [Browsable(false)]
     public VariableType Type { get; }
@@ -828,13 +825,25 @@ public class Bytecode
 
     public void UpdateAddresses()
     {
-        int address = 0;
+        int zeroAddress = 0;
+        int upperAddress = 513;
 
         foreach (var variable in _variables)
         {
-            variable.Address = address;
-
-            address += variable.GetSize();
+            if (variable.Kind != VariableDeclarationKind.Const)
+            {
+                int vSize = variable.GetSize();
+                if (vSize == 1)
+                {
+                    variable.Address = zeroAddress;
+                    zeroAddress += vSize;
+                } else
+                {
+                    variable.Address = upperAddress;
+                    upperAddress += vSize;
+                }
+            }
+            
         }
     }
 }

@@ -21,7 +21,7 @@ namespace dotNES.Mappers
         }
     }
 
-    abstract class BaseMapper
+    public abstract class BaseMapper
     {
         protected readonly Emulator _emulator;
         protected readonly byte[] _prgROM;

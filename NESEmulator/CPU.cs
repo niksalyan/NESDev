@@ -4,7 +4,7 @@ using System.Reflection;
 
 namespace dotNES
 {
-    sealed partial class CPU : Addressable
+    public partial class CPU : Addressable
     {
         private readonly byte[] _ram = new byte[0x800];
         public int Cycle;
@@ -63,6 +63,11 @@ namespace dotNES
             }
 
             Console.WriteLine(">>> " + ReadByte(0x02));
+        }
+
+        public byte ReadMemory(ushort address)
+        {
+            return (byte)ReadByte(address);
         }
     }
 }

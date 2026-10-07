@@ -3,7 +3,7 @@ using System.Diagnostics;
 
 namespace dotNES
 {
-    class Cartridge
+    public class Cartridge
     {
         public readonly byte[] Raw;
         public readonly int PRGROMSize;

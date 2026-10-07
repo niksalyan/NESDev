@@ -16,7 +16,7 @@ namespace NTOSDev.Components
         public Terminal()
         {
             InitializeComponent();
-            //dataGridView1.DataSource = Emulator.DebugLines;
+            dataGridView1.DataSource = NES.DebugOutput;
             dataGridView1.CellFormatting += dataGridView1_CellFormatting;
         }
 

@@ -1,6 +1,7 @@
 ﻿
 
 using NESCompiler;
+using NESDev.Models;
 using NTOSDev.Components;
 using NTOSDev.Libs;
 using System.Collections.Immutable;
@@ -23,13 +24,26 @@ namespace NTOSDev
         public static BindingList<Instruction> Instructions = new BindingList<Instruction>();
         public static BindingList<Variable> Variables = new BindingList<Variable>();
 
+        public static BindingList<DebugLine> DebugOutput = new BindingList<DebugLine>();
+
         public static string LastProject { get => RegistryHelper.ReadRegistry("NESLastProject"); set => RegistryHelper.WriteRegistry("NESLastProject", value); }
 
 
         public static void Compile(string src)
         {
-            var cartridge = Compiler.Compile(src);
+            try
+            {
+                var cartridge = Compiler.Compile(src);
+                DebugOutput.Clear();
+                DebugOutput.Add(new DebugLine("Compiled", false));
 
+
+                DEmulator.BootCartridge(cartridge);
+            } catch (Exception ex)
+            {
+                DebugOutput.Clear();
+                DebugOutput.Add(new DebugLine(ex.Message, true));
+            }
 
             Instructions.Clear();
             Variables.Clear();
@@ -37,15 +51,7 @@ namespace NTOSDev
             foreach(var v in Compiler.Variables) Variables.Add(v);
 
 
-            Debug.WriteLine("POPULATED: " + Instructions.Count);
-
-            Debug.WriteLine($"Cartridge size: {cartridge.Length} bytes");
-
-            File.WriteAllBytes("output.nes", cartridge);
-
-            File.WriteAllText("output.txt", ToArduinoArray(cartridge));
-
-            DEmulator.BootCartridge(cartridge);
+           
         }
 
 

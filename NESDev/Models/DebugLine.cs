@@ -8,5 +8,11 @@ namespace NESDev.Models
     {
         public string Message { get; set; }
         public bool IsError = false;
+
+        public DebugLine (string message, bool isError = false)
+        {
+            Message = message;
+            IsError = isError;
+        }
     }
 }

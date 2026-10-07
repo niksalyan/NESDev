@@ -8,7 +8,7 @@ using dotNES.Mappers;
 
 namespace dotNES
 {
-    class Emulator
+    public class Emulator
     {
         private static readonly Dictionary<int, KeyValuePair<Type, MapperDef>> Mappers = (from type in Assembly.GetExecutingAssembly().GetTypes()
                                                                  let def = (MapperDef)type.GetCustomAttributes(typeof(MapperDef), true).FirstOrDefault()
@@ -26,10 +26,13 @@ namespace dotNES
 
         public readonly Cartridge Cartridge;
 
+        public static Emulator instance;
+
 
 
         public Emulator(byte[] raw, IController controller)
         {
+            instance = this;
             Cartridge = new Cartridge(raw);
             if (!Mappers.ContainsKey(Cartridge.MapperNumber))
                 throw new NotImplementedException($"unsupported mapper {Cartridge.MapperNumber}");
