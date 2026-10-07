@@ -16,7 +16,7 @@ public class Compiler : AstVisitor
     private const byte ExpressionStackBase = 0xF0;
     private const byte ExpressionStackSize = 16;
 
-    private const byte ExprTempAddress = 0xEF;
+    private const byte ExpressionTemp = 0xEF;
 
     private byte _expressionStackDepth;
 
@@ -142,85 +142,6 @@ public class Compiler : AstVisitor
         return null;
     }
 
-    protected override object? VisitBinaryExpression(
-    BinaryExpression expression)
-    {
-        switch (expression.Operator)
-        {
-            case Operator.Addition:
-                {
-                    // Prefer generating: LDA <left>; CLC; ADC <right>
-                    // Only use a scratch temp when the right-hand side is a complex expression.
-
-                    if (expression.Right is Literal litRight)
-                    {
-                        LoadByte(expression.Left);
-                        _prg.Add(OpCode.Clc);
-                        _prg.Add(OpCode.AdcImmediate, Convert.ToByte(litRight.Value));
-                        return null;
-                    }
-
-                    if (expression.Right is Identifier idRight)
-                    {
-                        LoadByte(expression.Left);
-                        _prg.Add(OpCode.Clc);
-                        var src = _prg.GetVariable(idRight.Name);
-                        if (src.Address <= 0xFF)
-                            _prg.Add(OpCode.AdcZeroPage, src.Address);
-                        else
-                            _prg.Add(OpCode.AdcAbsolute, src.Address);
-                        return null;
-                    }
-
-                    // Right is complex: evaluate it into the fixed scratch at $0200, then add.
-                    EmitExpressionToAddress(expression.Right, ExprTempAddress);
-
-                    LoadByte(expression.Left);
-                    _prg.Add(OpCode.Clc);
-                    _prg.Add(OpCode.AdcAbsolute, ExprTempAddress);
-
-                    return null;
-                }
-
-            case Operator.Subtraction:
-                {
-                    // Prefer: LDA <left>; SEC; SBC <right>
-
-                    if (expression.Right is Literal litR)
-                    {
-                        LoadByte(expression.Left);
-                        _prg.Add(OpCode.Sec);
-                        _prg.Add(OpCode.SbcImmediate, Convert.ToByte(litR.Value));
-                        return null;
-                    }
-
-                    if (expression.Right is Identifier idR)
-                    {
-                        LoadByte(expression.Left);
-                        _prg.Add(OpCode.Sec);
-                        var src = _prg.GetVariable(idR.Name);
-                        if (src.Address <= 0xFF)
-                            _prg.Add(OpCode.SbcZeroPage, src.Address);
-                        else
-                            _prg.Add(OpCode.SbcAbsolute, src.Address);
-                        return null;
-                    }
-
-                    EmitExpressionToAddress(expression.Right, ExprTempAddress);
-
-                    LoadByte(expression.Left);
-                    _prg.Add(OpCode.Sec);
-                    _prg.Add(OpCode.SbcAbsolute, ExprTempAddress);
-
-                    return null;
-                }
-
-            default:
-                throw new NotSupportedException(
-                    $"Operator '{expression.Operator}' is not supported.");
-        }
-    }
-
     protected override object? VisitIfStatement(Acornima.Ast.IfStatement ifStatement)
     {
         // Special-case non-logical binary expressions (comparisons) because
@@ -243,14 +164,8 @@ public class Compiler : AstVisitor
 
             // Ensure accumulator contains left value.
             // If left is a simple expression, load it; otherwise let Visit(left) produce code that leaves A set.
-            if (left is Literal || left is Identifier)
-            {
-                LoadByte(left);
-            }
-            else
-            {
-                Visit(left);
-            }
+            EmitExpression(left);
+            Pop();
 
             // Emit CMP depending on right kind
             if (right is Literal lit)
@@ -268,8 +183,8 @@ public class Compiler : AstVisitor
             else
             {
                 // Complex right: evaluate into fixed scratch then CMP scratch
-                EmitExpressionToAddress(right, ExprTempAddress);
-                _prg.Add(OpCode.CmpAbsolute, ExprTempAddress);
+                EmitExpressionToAddress(right, ExpressionTemp);
+                _prg.Add(OpCode.CmpAbsolute, ExpressionTemp);
             }
 
             // Decide branch opcode based on operator name (best-effort)
@@ -324,15 +239,8 @@ public class Compiler : AstVisitor
 
         // Fallback: evaluate test into A and branch if zero (false)
         // If Visit(test) leaves a value in memory, ensure A contains the test value.
-        Visit(test);
-        try
-        {
-            LoadByte(test);
-        }
-        catch
-        {
-            // If LoadByte cannot handle the test node, assume Visit(test) left the result in A.
-        }
+        EmitExpression(test);
+        Pop();
 
         int beqIndex = _prg.Instructions.Count;
         _prg.Add(OpCode.Beq, 0); // jump when zero (false)
@@ -415,110 +323,17 @@ public class Compiler : AstVisitor
     // Evaluate expression and store accumulator A into the given address.
     private void EmitExpressionToAddress(Expression expression, int address)
     {
-        switch (expression)
-        {
-            case Literal literal:
-                _prg.Add(OpCode.LdaImmediate, Convert.ToByte(literal.Value));
-                break;
+        EmitExpression(expression);
+        Pop();
 
-            case Identifier identifier:
-                var source = _prg.GetVariable(identifier.Name);
-                if (source.Address <= 0xFF)
-                    _prg.Add(OpCode.LdaZeroPage, source.Address);
-                else
-                    _prg.Add(OpCode.LdaAbsolute, source.Address);
-                break;
-
-            case BinaryExpression binary:
-                Visit(binary);
-                break;
-
-            default:
-                if (expression.GetType().Name == "NonLogicalBinaryExpression")
-                {
-                    // Reuse the same handling as in EmitByteValue's non-logical branch
-                    var leftProp = expression.GetType().GetProperty("Left");
-                    var rightProp = expression.GetType().GetProperty("Right");
-                    var opProp = expression.GetType().GetProperty("Operator");
-
-                    if (leftProp == null || rightProp == null || opProp == null)
-                        throw new NotSupportedException("Unsupported non-logical binary expression shape.");
-
-                    var left = (Expression)leftProp.GetValue(expression)!;
-                    var right = (Expression)rightProp.GetValue(expression)!;
-                    var op = opProp.GetValue(expression)!;
-
-                    string opName = op.ToString().ToLowerInvariant();
-
-                    if (opName.Contains("add") || opName.Contains("+"))
-                    {
-                        if (right is Literal litRight)
-                        {
-                            LoadByte(left);
-                            _prg.Add(OpCode.Clc);
-                            _prg.Add(OpCode.AdcImmediate, Convert.ToByte(litRight.Value));
-                        }
-                        else if (right is Identifier idRight)
-                        {
-                            LoadByte(left);
-                            _prg.Add(OpCode.Clc);
-                            var src = _prg.GetVariable(idRight.Name);
-                            if (src.Address <= 0xFF)
-                                _prg.Add(OpCode.AdcZeroPage, src.Address);
-                            else
-                                _prg.Add(OpCode.AdcAbsolute, src.Address);
-                        }
-                        else
-                        {
-                            EmitExpressionToAddress(right, ExprTempAddress);
-                            LoadByte(left);
-                            _prg.Add(OpCode.Clc);
-                            _prg.Add(OpCode.AdcAbsolute, ExprTempAddress);
-                        }
-
-                        break;
-                    }
-
-                    if (opName.Contains("sub") || opName.Contains("-"))
-                    {
-                        if (right is Literal litR)
-                        {
-                            LoadByte(left);
-                            _prg.Add(OpCode.Sec);
-                            _prg.Add(OpCode.SbcImmediate, Convert.ToByte(litR.Value));
-                        }
-                        else if (right is Identifier idR)
-                        {
-                            LoadByte(left);
-                            _prg.Add(OpCode.Sec);
-                            var src = _prg.GetVariable(idR.Name);
-                            if (src.Address <= 0xFF)
-                                _prg.Add(OpCode.SbcZeroPage, src.Address);
-                            else
-                                _prg.Add(OpCode.SbcAbsolute, src.Address);
-                        }
-                        else
-                        {
-                            EmitExpressionToAddress(right, ExprTempAddress);
-                            LoadByte(left);
-                            _prg.Add(OpCode.Sec);
-                            _prg.Add(OpCode.SbcAbsolute, ExprTempAddress);
-                        }
-
-                        break;
-                    }
-
-                    throw new NotSupportedException($"Operator '{op}' is not supported in non-logical binary expression.");
-                }
-
-                throw new NotSupportedException($"Expression '{expression.GetType().Name}' is not supported.");
-        }
-
-        // Store A into address
         if (address <= 0xFF)
+        {
             _prg.Add(OpCode.StaZeroPage, address);
+        }
         else
+        {
             _prg.Add(OpCode.StaAbsolute, address);
+        }
     }
 
     private void EmitExpression(Expression expression)
@@ -584,9 +399,9 @@ public class Compiler : AstVisitor
             case Operator.Subtraction:
                 EmitSubtract();
                 break;
-            case Operator.Multiplication:
+            /*case Operator.Multiplication:
                 EmitMultiply();
-                break;
+                break;*/
 
             default:
                 throw new NotSupportedException(
