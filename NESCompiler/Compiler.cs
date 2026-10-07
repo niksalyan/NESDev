@@ -16,7 +16,7 @@ public class Compiler : AstVisitor
     private const byte ExpressionStackBase = 0xF0;
     private const byte ExpressionStackSize = 16;
 
-    private const byte ExpressionTemp = 0xEF;
+    private const byte ExprTempAddress = 0xEF;
 
     private byte _expressionStackDepth;
 
