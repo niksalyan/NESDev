@@ -4,6 +4,6 @@ var b = 25;
 var c = a + b - 34 + 25 - 64;
 
 
-for(var x = 0; x < 20; x = x + 1) {
-	print("B");
+for(var x = 0; x < 5; x = x + 1) {
+	print("B"); 
 }
