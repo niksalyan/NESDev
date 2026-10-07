@@ -18,6 +18,8 @@ public class Compiler : AstVisitor
 
     private const byte ExpressionTemp = 0xEF;
 
+    private const int DelayCounterAddress = 0x01FF;
+
     private byte _expressionStackDepth;
 
     private static readonly Parser _parser = new Parser(new ParserOptions()
@@ -488,9 +490,17 @@ public class Compiler : AstVisitor
             arguments.Add(Visit(argument));
         }
 
-        _compilerFunctions.Execute(
+        if (functionName == "delay")
+        {
+            EmitWaitFrame();
+        } else
+        {
+            _compilerFunctions.Execute(
             functionName,
             arguments.ToArray());
+        }
+
+        
 
         // Call function here
 
@@ -608,6 +618,45 @@ public class Compiler : AstVisitor
         }
 
         return branchIndexes;
+    }
+
+    private void EmitWaitFrames(int count)
+    {
+        if (count < 0)
+            throw new ArgumentOutOfRangeException(nameof(count));
+
+        if (count == 0)
+            return;
+
+        // Put count into a temporary zero-page location.
+        _prg.Add(OpCode.LdaImmediate, count);
+        _prg.Add(OpCode.StaZeroPage, DelayCounterAddress);
+
+        int loopStart = _prg.Instructions.Count;
+
+        EmitWaitFrame();
+
+        _prg.Add(OpCode.DecZeroPage, DelayCounterAddress);
+
+        int branchIndex = _prg.Instructions.Count;
+
+        _prg.Add(OpCode.Bne, 0);
+
+        int afterDelay = _prg.Instructions.Count;
+
+        _prg.Instructions[branchIndex] =
+            new Instruction(
+                OpCode.Bne,
+                loopStart);
+    }
+
+    private void EmitWaitFrame()
+    {
+        // Wait for VBlank to start.
+        int waitStart = _prg.Instructions.Count;
+
+        _prg.Add(OpCode.BitAbsolute, 0x2002); // PPUSTATUS
+        _prg.Add(OpCode.Bpl, waitStart);
     }
     private void EmitExpression(Expression expression)
     {
