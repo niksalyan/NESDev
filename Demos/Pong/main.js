@@ -1,4 +1,13 @@
-for(var x = 0; x < 50; x = x + 1) {
+frame();
+cursorAt(0, 0);
+
+sprite(0, 18, 100, 34);
+
+var x = 0;
+while(x < 240) {
+
 	frame();
-	print("B");
+    
+    print("B");
+	x = x + 1;
 }

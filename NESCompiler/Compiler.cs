@@ -60,58 +60,93 @@ public class Compiler : AstVisitor
 
     private void BuildProgram()
     {
-        // -------------------------
-        // CPU initialization
-        // -------------------------
+        // ============================================================
+        // CPU INITIALIZATION
+        // ============================================================
 
         _prg.Add(OpCode.Sei);
         _prg.Add(OpCode.Cld);
 
-        // Initialize 6502 stack.
+        // Initialize 6502 hardware stack.
         _prg.Add(OpCode.LdxImmediate, 0xFF);
         _prg.Add(OpCode.Txs);
 
-        // Your expression stack uses X as its index.
+        // Initialize expression stack index.
         _prg.Add(OpCode.LdxImmediate, 0);
 
-        // -------------------------
-        // PPU initialization
-        // -------------------------
+        // ============================================================
+        // PPU INITIALIZATION
+        // ============================================================
 
         // Disable NMI and rendering.
         _prg.Add(OpCode.LdaImmediate, 0x00);
         _prg.Add(OpCode.StaAbsolute, 0x2000);
         _prg.Add(OpCode.StaAbsolute, 0x2001);
 
-        // Wait for first VBlank.
+        // Wait for VBlank.
         _compilerFunctions.Execute("frame");
 
-        // PPU initialization goes here.
-        // Palette, nametable, etc.
-
-        // Reset PPU latch.
+        // Reset PPU address/scroll latch.
         _prg.Add(OpCode.LdaAbsolute, 0x2002);
 
-        // Reset scroll.
+        // ------------------------------------------------------------
+        // Palette
+        // ------------------------------------------------------------
+
+        _prg.PpuAddress(0x3F00);
+
+        _prg.WritePpu(0x0F);
+        _prg.WritePpu(0x30);
+        _prg.WritePpu(0x20);
+        _prg.WritePpu(0x10);
+
+        // ------------------------------------------------------------
+        // Initial nametable address
+        // ------------------------------------------------------------
+
+        _prg.PpuAddress(0x2090);
+
+        // ------------------------------------------------------------
+        // Reset scroll
+        // ------------------------------------------------------------
+
         _prg.Add(OpCode.LdaImmediate, 0x00);
         _prg.Add(OpCode.StaAbsolute, 0x2005);
         _prg.Add(OpCode.StaAbsolute, 0x2005);
 
-        // Wait for another VBlank.
+        // Wait for another VBlank before enabling rendering.
         _compilerFunctions.Execute("frame");
 
-        // -------------------------
-        // User program
-        // -------------------------
+        // ------------------------------------------------------------
+        // Enable background rendering
+        // ------------------------------------------------------------
 
-        Node ast = _parser.ParseScript(_src); 
+        _prg.Add(OpCode.LdaImmediate, 0x18);
+        _prg.Add(OpCode.StaAbsolute, 0x2001);
+
+        // ============================================================
+        // USER PROGRAM
+        // ============================================================
+
+        Node ast = _parser.ParseScript(_src);
         Visit(ast);
 
-        // -------------------------
-        // End / restart policy
-        // -------------------------
+        // ============================================================
+        // END OF PROGRAM
+        // ============================================================
 
-        _prg.Add(OpCode.JmpAbsolute, 0);
+        // Do not restart PPU initialization.
+        int end = _prg.Instructions.Count;
+
+        _prg.Add(
+            OpCode.JmpAbsolute,
+            end);
+    }
+
+    protected override object? VisitExpressionStatement(
+    ExpressionStatement expressionStatement)
+    {
+        return Visit(expressionStatement.Expression);
     }
 
     protected override object? VisitVariableDeclaration(
