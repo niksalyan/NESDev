@@ -669,7 +669,7 @@ public class Compiler : AstVisitor
         return jumpIndex;
     }
 
-    private void EmitExpression(Expression expression)
+    public void EmitExpression(Expression expression)
     {
         if (expression.GetType().Name == "NonLogicalBinaryExpression")
         {
