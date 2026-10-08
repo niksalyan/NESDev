@@ -16,7 +16,7 @@ public class Compiler : AstVisitor
     private const byte ExpressionStackBase = 0xF0;
     private const byte ExpressionStackSize = 16;
 
-    private const byte ExpressionTemp = 0xEF;
+    public const byte ExpressionTemp = 0xEF;
 
     private const int DelayCounterAddress = 0x01FF;
 
@@ -36,11 +36,7 @@ public class Compiler : AstVisitor
         _expressionStackDepth = 0;
         _compilerFunctions = new CompilerFunctions(
             this,
-            _prg,
-            EmitExpression,
-            Pop,
-            () => _expressionStackDepth,
-            ExpressionStackBase);
+            _prg);
         _prg.Variables.Clear();
 
         
