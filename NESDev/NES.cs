@@ -37,6 +37,7 @@ namespace NTOSDev
                 DebugOutput.Clear();
                 DebugOutput.Add(new DebugLine("Compiled", false));
 
+                // cartridge = File.ReadAllBytes(@"D:\Games\NES\roms\contra.nes");
 
                 DEmulator.BootCartridge(cartridge);
             } catch (Exception ex)
@@ -50,8 +51,6 @@ namespace NTOSDev
             foreach(var i in Compiler.Instructions) Instructions.Add(i);
             foreach(var v in Compiler.Variables) Variables.Add(v);
 
-
-           
         }
 
 

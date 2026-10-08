@@ -34,7 +34,13 @@ public class Compiler : AstVisitor
         _src = source;
         _prg = new Bytecode();
         _expressionStackDepth = 0;
-        _compilerFunctions = new CompilerFunctions(_prg);
+        _compilerFunctions = new CompilerFunctions(
+            this,
+            _prg,
+            EmitExpression,
+            Pop,
+            () => _expressionStackDepth,
+            ExpressionStackBase);
         _prg.Variables.Clear();
 
         
@@ -49,7 +55,13 @@ public class Compiler : AstVisitor
             PRG = _prg.ToBytecode(),
             CHR = Tileset.Default
         };
-        return nes.ToBytes();
+
+        var rom = nes.ToBytes();
+
+        File.WriteAllBytes("output.nes", rom);
+        File.WriteAllText("output.txt", Tileset.ToArduinoArray(nes.PRG));
+
+        return rom;
     }
 
 
@@ -350,43 +362,56 @@ public class Compiler : AstVisitor
         {
             EmitComparison(binary);
 
-            var branchIndexes =
+            var jumpIndexes =
                 EmitComparisonBranch(binary.Operator);
 
             Visit(whileStatement.Body);
 
+            // Loop back to condition.
             _prg.Add(
                 OpCode.JmpAbsolute,
                 conditionStart);
 
-            int afterWhile = _prg.Instructions.Count;
+            int afterWhile =
+                _prg.Instructions.Count;
 
-            foreach (int index in branchIndexes)
+            // Patch the absolute jumps used for exiting the loop.
+            foreach (int index in jumpIndexes)
             {
                 var old = _prg.Instructions[index];
 
                 _prg.Instructions[index] =
                     new Instruction(
-                        old.OpCode,
+                        OpCode.JmpAbsolute,
                         afterWhile);
             }
 
             return null;
         }
 
-        // Simple truthy while
+        // Simple truthy while.
         EmitExpression(whileStatement.Test);
         Pop();
 
-        int branchIndexSimple =
+        // If false, skip over the JMP.
+        int branchIndex =
             _prg.Instructions.Count;
 
         _prg.Add(
-            OpCode.Beq,
+            OpCode.Bne,
+            branchIndex + 2);
+
+        // Far jump to loop exit.
+        int exitJumpIndex =
+            _prg.Instructions.Count;
+
+        _prg.Add(
+            OpCode.JmpAbsolute,
             0);
 
         Visit(whileStatement.Body);
 
+        // Loop back to condition.
         _prg.Add(
             OpCode.JmpAbsolute,
             conditionStart);
@@ -394,9 +419,9 @@ public class Compiler : AstVisitor
         int afterWhileSimple =
             _prg.Instructions.Count;
 
-        _prg.Instructions[branchIndexSimple] =
+        _prg.Instructions[exitJumpIndex] =
             new Instruction(
-                OpCode.Beq,
+                OpCode.JmpAbsolute,
                 afterWhileSimple);
 
         return null;
@@ -502,47 +527,16 @@ public class Compiler : AstVisitor
 
         string functionName = identifier.Name;
 
-        // ------------------------------------------------------------
-        // User-defined function / subroutine
-        // ------------------------------------------------------------
-
-        /*if (_functions.TryGetValue(
-                functionName,
-                out int userFunctionIndex))
-        {
-            if (callExpression.Arguments.Count != 0)
-                throw new InvalidOperationException(
-                    $"Function '{functionName}' does not accept arguments.");
-
-            Add(
-                OpCode.CallSubroutine,
-                userFunctionIndex);
-
-            return VariableType.None;
-        }*/
-
-        // ------------------------------------------------------------
-        // VM function
-        // ------------------------------------------------------------
-
-        var arguments = new List<object?>();
+        var arguments = new List<Expression>();
 
         foreach (var argument in callExpression.Arguments)
         {
-            arguments.Add(Visit(argument));
+            arguments.Add(argument);
         }
 
-
-
-        _compilerFunctions.Execute(
+        return _compilerFunctions.Execute(
             functionName,
-            arguments.ToArray());
-
-
-
-        // Call function here
-
-        return VariableType.None;
+            arguments);
     }
 
     // Evaluate expression and store accumulator A into the given address.
@@ -580,82 +574,103 @@ public class Compiler : AstVisitor
 
     private List<int> EmitComparisonBranch(Operator op)
     {
-        var branchIndexes = new List<int>();
+        var jumpIndexes = new List<int>();
 
         switch (op)
         {
             case Operator.Equality:
-                branchIndexes.Add(_prg.Instructions.Count);
-                _prg.Add(OpCode.Bne, 0);
+                jumpIndexes.Add(
+                    EmitFarFalseJump(OpCode.Bne));
                 break;
 
             case Operator.Inequality:
-                branchIndexes.Add(_prg.Instructions.Count);
-                _prg.Add(OpCode.Beq, 0);
+                jumpIndexes.Add(
+                    EmitFarFalseJump(OpCode.Beq));
                 break;
 
             case Operator.LessThan:
-                branchIndexes.Add(_prg.Instructions.Count);
-                _prg.Add(OpCode.Bcs, 0);
+                jumpIndexes.Add(
+                    EmitFarFalseJump(OpCode.Bcs));
                 break;
 
             case Operator.GreaterThanOrEqual:
-                branchIndexes.Add(_prg.Instructions.Count);
-                _prg.Add(OpCode.Bcc, 0);
+                jumpIndexes.Add(
+                    EmitFarFalseJump(OpCode.Bcc));
                 break;
 
             case Operator.GreaterThan:
-                // False when:
-                // left < right
-                // OR
-                // left == right
+                jumpIndexes.Add(
+                    EmitFarFalseJump(OpCode.Bcc));
 
-                branchIndexes.Add(_prg.Instructions.Count);
-                _prg.Add(OpCode.Bcc, 0);
-
-                branchIndexes.Add(_prg.Instructions.Count);
-                _prg.Add(OpCode.Beq, 0);
+                jumpIndexes.Add(
+                    EmitFarFalseJump(OpCode.Beq));
                 break;
 
             case Operator.LessThanOrEqual:
-                // False only when left > right.
-                //
-                // C = 0 => left < right => true
-                // C = 1, Z = 1 => equal => true
-                // C = 1, Z = 0 => greater => false
+                {
+                    int start = _prg.Instructions.Count;
 
-                int bccIndex = _prg.Instructions.Count;
-                _prg.Add(OpCode.Bcc, 0);
+                    // Less -> continue.
+                    _prg.Add(
+                        OpCode.Bcc,
+                        start + 3);
 
-                int beqIndex = _prg.Instructions.Count;
-                _prg.Add(OpCode.Beq, 0);
+                    // Equal -> continue.
+                    _prg.Add(
+                        OpCode.Beq,
+                        start + 3);
 
-                // If neither BCC nor BEQ was taken,
-                // left > right, so branch false.
-                branchIndexes.Add(_prg.Instructions.Count);
-                _prg.Add(OpCode.JmpAbsolute, 0);
+                    // Greater -> false.
+                    int jumpIndex =
+                        _prg.Instructions.Count;
 
-                // Both BCC and BEQ should continue here.
-                int trueAddress = _prg.Instructions.Count;
+                    _prg.Add(
+                        OpCode.JmpAbsolute,
+                        0);
 
-                _prg.Instructions[bccIndex] =
-                    new Instruction(
-                        _prg.Instructions[bccIndex].OpCode,
-                        trueAddress);
+                    jumpIndexes.Add(jumpIndex);
 
-                _prg.Instructions[beqIndex] =
-                    new Instruction(
-                        _prg.Instructions[beqIndex].OpCode,
-                        trueAddress);
-
-                break;
+                    break;
+                }
 
             default:
                 throw new NotSupportedException(
                     $"Comparison operator '{op}' is not supported.");
         }
 
-        return branchIndexes;
+        return jumpIndexes;
+    }
+
+    private int EmitFarFalseJump(OpCode falseBranch)
+    {
+        OpCode trueBranch = falseBranch switch
+        {
+            OpCode.Bne => OpCode.Beq,
+            OpCode.Beq => OpCode.Bne,
+            OpCode.Bcs => OpCode.Bcc,
+            OpCode.Bcc => OpCode.Bcs,
+
+            _ => throw new NotSupportedException(
+                $"Cannot invert branch '{falseBranch}'.")
+        };
+
+        // The conditional branch skips over the JMP.
+        int branchIndex =
+            _prg.Instructions.Count;
+
+        _prg.Add(
+            trueBranch,
+            branchIndex + 2);
+
+        // This is the actual far jump.
+        int jumpIndex =
+            _prg.Instructions.Count;
+
+        _prg.Add(
+            OpCode.JmpAbsolute,
+            0);
+
+        return jumpIndex;
     }
 
     private void EmitExpression(Expression expression)
@@ -694,6 +709,18 @@ public class Compiler : AstVisitor
                     }
 
                     Push();
+                    return;
+                }
+
+            case CallExpression callExpression:
+                {
+                    var type = VisitCallExpression(callExpression);
+
+                    if (type is VariableType.Byte)
+                    {
+                        Push();
+                    }
+
                     return;
                 }
 
@@ -747,6 +774,65 @@ public class Compiler : AstVisitor
         Push();
     }
 
+    public void EmitCursorAddress(int startDepth)
+    {
+        // Reset PPU $2006 write latch.
+        _prg.Add(
+            OpCode.LdaAbsolute,
+            0x2002);
+
+        // Y
+        int yAddress =
+            ExpressionStackBase +
+            startDepth +
+            1;
+
+        _prg.Add(
+            OpCode.LdaZeroPage,
+            yAddress);
+
+        // Y * 32
+        _prg.Add(OpCode.AslAccumulator);
+        _prg.Add(OpCode.AslAccumulator);
+        _prg.Add(OpCode.AslAccumulator);
+        _prg.Add(OpCode.AslAccumulator);
+        _prg.Add(OpCode.AslAccumulator);
+
+        // Add X.
+        int xAddress =
+            ExpressionStackBase +
+            startDepth;
+
+        _prg.Add(
+            OpCode.Clc);
+
+        _prg.Add(
+            OpCode.AdcZeroPage,
+            xAddress);
+
+        // Low byte.
+        _prg.Add(
+            OpCode.StaZeroPage,
+            ExpressionTemp);
+
+        // High byte.
+        _prg.Add(
+            OpCode.LdaImmediate,
+            0x20);
+
+        _prg.Add(
+            OpCode.StaAbsolute,
+            0x2006);
+
+        // Low byte.
+        _prg.Add(
+            OpCode.LdaZeroPage,
+            ExpressionTemp);
+
+        _prg.Add(
+            OpCode.StaAbsolute,
+            0x2006);
+    }
     private void EmitSubtract()
     {
         // Stack:

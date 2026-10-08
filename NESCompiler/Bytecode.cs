@@ -426,6 +426,7 @@ public class Bytecode
             case OpCode.Dex:
             case OpCode.Nop:
             case OpCode.AslAccumulator:
+            case OpCode.LsrAccumulator:
                 break;
 
             // ----------------------------------------------------
