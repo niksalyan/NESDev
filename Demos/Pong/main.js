@@ -4,7 +4,8 @@ var b = 25;
 var c = a + b - 34 + 25 - 64;
 
 
-for(var x = 0; x < 240; x = x + 1) {
-	print("B"); 
-	delay();
+for(var x = 0; x < 50; x = x + 1) {
+	
+	frame();
+	print("B");
 }

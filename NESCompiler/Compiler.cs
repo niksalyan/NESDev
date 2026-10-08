@@ -60,50 +60,57 @@ public class Compiler : AstVisitor
 
     private void BuildProgram()
     {
+        // -------------------------
+        // CPU initialization
+        // -------------------------
+
         _prg.Add(OpCode.Sei);
         _prg.Add(OpCode.Cld);
+
+        // Initialize 6502 stack.
+        _prg.Add(OpCode.LdxImmediate, 0xFF);
+        _prg.Add(OpCode.Txs);
+
+        // Your expression stack uses X as its index.
         _prg.Add(OpCode.LdxImmediate, 0);
 
+        // -------------------------
+        // PPU initialization
+        // -------------------------
 
-        // This is the instruction we want BPL to jump back to.
-        int waitVBlank = _prg.Instructions.Count;
-
-        _prg.Add(OpCode.BitAbsolute, 0x2002);
-
-        // Target instruction index.
-        _prg.Add(OpCode.Bpl, waitVBlank);
-
+        // Disable NMI and rendering.
         _prg.Add(OpCode.LdaImmediate, 0x00);
         _prg.Add(OpCode.StaAbsolute, 0x2000);
+        _prg.Add(OpCode.StaAbsolute, 0x2001);
 
-        _prg.PpuAddress(0x3F00);
+        // Wait for first VBlank.
+        EmitWaitVBlank();
 
-        _prg.WritePpu(0x0F);
-        _prg.WritePpu(0x30);
-        _prg.WritePpu(0x20);
-        _prg.WritePpu(0x10);
+        // PPU initialization goes here.
+        // Palette, nametable, etc.
 
-        _prg.PpuAddress(0x2090);
-
-        Node ast = _parser.ParseScript(_src);
-        Visit(ast);
-
-        
-
-        /*_prg.WritePpu(0);
-        _prg.WritePpu(243);
-        _prg.WritePpu(128);*/
-
+        // Reset PPU latch.
         _prg.Add(OpCode.LdaAbsolute, 0x2002);
 
+        // Reset scroll.
         _prg.Add(OpCode.LdaImmediate, 0x00);
         _prg.Add(OpCode.StaAbsolute, 0x2005);
         _prg.Add(OpCode.StaAbsolute, 0x2005);
 
-        _prg.Add(OpCode.LdaImmediate, 0x08);
-        _prg.Add(OpCode.StaAbsolute, 0x2001);
+        // Wait for another VBlank.
+        EmitWaitVBlank();
 
-        // Jump back to the first instruction.
+        // -------------------------
+        // User program
+        // -------------------------
+
+        Node ast = _parser.ParseScript(_src); 
+        Visit(ast);
+
+        // -------------------------
+        // End / restart policy
+        // -------------------------
+
         _prg.Add(OpCode.JmpAbsolute, 0);
     }
 
@@ -490,9 +497,9 @@ public class Compiler : AstVisitor
             arguments.Add(Visit(argument));
         }
 
-        if (functionName == "delay")
+        if (functionName == "frame")
         {
-            EmitWaitFrame();
+            EmitWaitVBlank();
         } else
         {
             _compilerFunctions.Execute(
@@ -620,44 +627,14 @@ public class Compiler : AstVisitor
         return branchIndexes;
     }
 
-    private void EmitWaitFrames(int count)
+    private void EmitWaitVBlank()
     {
-        if (count < 0)
-            throw new ArgumentOutOfRangeException(nameof(count));
-
-        if (count == 0)
-            return;
-
-        // Put count into a temporary zero-page location.
-        _prg.Add(OpCode.LdaImmediate, count);
-        _prg.Add(OpCode.StaZeroPage, DelayCounterAddress);
-
-        int loopStart = _prg.Instructions.Count;
-
-        EmitWaitFrame();
-
-        _prg.Add(OpCode.DecZeroPage, DelayCounterAddress);
-
-        int branchIndex = _prg.Instructions.Count;
-
-        _prg.Add(OpCode.Bne, 0);
-
-        int afterDelay = _prg.Instructions.Count;
-
-        _prg.Instructions[branchIndex] =
-            new Instruction(
-                OpCode.Bne,
-                loopStart);
-    }
-
-    private void EmitWaitFrame()
-    {
-        // Wait for VBlank to start.
         int waitStart = _prg.Instructions.Count;
 
-        _prg.Add(OpCode.BitAbsolute, 0x2002); // PPUSTATUS
+        _prg.Add(OpCode.BitAbsolute, 0x2002);
         _prg.Add(OpCode.Bpl, waitStart);
     }
+
     private void EmitExpression(Expression expression)
     {
         if (expression.GetType().Name == "NonLogicalBinaryExpression")
