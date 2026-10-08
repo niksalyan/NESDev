@@ -14,7 +14,9 @@ var paddleY3 = 100;
 var aiPaddleY3 = 100;
 
 var score1 = 0;
+var score1Tile = 0;
 var score2 = 0;
+var score2Tile = 0;
 
 frame();
 
@@ -114,20 +116,33 @@ while (true) {
     // --------------------------------
     // RESET IF BALL MISSES A PADDLE
     // --------------------------------
+	
+    if (ballX > 248) {
+		score1 = score1 + 1;
+        ballX = 120;
+        ballY = 100;
+        ballVX = 0 - 3;
+        ballVY = 3;
+    }
 
-    if (ballX < 0) {
+    if (ballX < 5) {
+		score2 = score2 + 1;
         ballX = 120;
         ballY = 100;
         ballVX = 3;
         ballVY = 3;
     }
 
-    if (ballX > 248) {
-        ballX = 120;
-        ballY = 100;
-        ballVX = 0 - 3;
-        ballVY = 3;
-    }
+	if (score1 > 9) {
+		score1 = 0;
+		score2 = 0;
+	}
+
+	if (score2 > 9) {
+		score1 = 0;
+		score2 = 0;
+	}
+
 
 
 	paddleY2 = paddleY - 8;
@@ -135,11 +150,18 @@ while (true) {
 	aiPaddleY2 = aiPaddleY - 8;
 	aiPaddleY3 = aiPaddleY + 8;
 
+	score1Tile = score1 + 16;
+	score2Tile = score2 + 16;
+
     // --------------------------------
     // SYNCHRONIZE WITH NEXT FRAME
     // --------------------------------
 
     frame();
+
+	tileAt(15, 4, score1Tile);
+	tileAt(16, 4, 26);
+	tileAt(17, 4, score2Tile);
 	
 	
     // --------------------------------
