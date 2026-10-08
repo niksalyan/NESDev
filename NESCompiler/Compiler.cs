@@ -84,7 +84,7 @@ public class Compiler : AstVisitor
         _prg.Add(OpCode.StaAbsolute, 0x2001);
 
         // Wait for first VBlank.
-        EmitWaitVBlank();
+        _compilerFunctions.Execute("frame");
 
         // PPU initialization goes here.
         // Palette, nametable, etc.
@@ -98,7 +98,7 @@ public class Compiler : AstVisitor
         _prg.Add(OpCode.StaAbsolute, 0x2005);
 
         // Wait for another VBlank.
-        EmitWaitVBlank();
+        _compilerFunctions.Execute("frame");
 
         // -------------------------
         // User program
@@ -497,17 +497,13 @@ public class Compiler : AstVisitor
             arguments.Add(Visit(argument));
         }
 
-        if (functionName == "frame")
-        {
-            EmitWaitVBlank();
-        } else
-        {
-            _compilerFunctions.Execute(
+
+
+        _compilerFunctions.Execute(
             functionName,
             arguments.ToArray());
-        }
 
-        
+
 
         // Call function here
 
@@ -625,14 +621,6 @@ public class Compiler : AstVisitor
         }
 
         return branchIndexes;
-    }
-
-    private void EmitWaitVBlank()
-    {
-        int waitStart = _prg.Instructions.Count;
-
-        _prg.Add(OpCode.BitAbsolute, 0x2002);
-        _prg.Add(OpCode.Bpl, waitStart);
     }
 
     private void EmitExpression(Expression expression)
