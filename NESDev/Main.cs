@@ -1,5 +1,6 @@
 ﻿using NTOSDev.Components;
 using NTOSDev.Controls;
+using NTOSDev.Libs;
 using System.Diagnostics;
 using System.Text.RegularExpressions;
 using WeifenLuo.WinFormsUI.Docking;

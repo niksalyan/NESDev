@@ -1,7 +1,7 @@
 ﻿using Acornima.Ast;
 using System.ComponentModel;
 using System.Diagnostics;
-using dotNES;
+
 
 namespace NESCompiler;
 
@@ -216,7 +216,7 @@ public class Variable
         (IsArray ? "[" + Length + "]" : "");
 
 
-    public byte Value => Emulator.instance?.CPU?.ReadMemory((ushort)Address) ?? 0;
+    // public byte Value => Emulator.instance?.CPU?.ReadMemory((ushort)Address) ?? 0;
 
     [Browsable(false)]
     public VariableType Type { get; }

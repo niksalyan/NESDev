@@ -6,17 +6,20 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="DockPanelSuite" Version="3.1.1" />
     <PackageReference Include="DockPanelSuite.ThemeVS2015" Version="3.1.1" />
+    <PackageReference Include="NAudio.WinForms" Version="2.2.0" />
+    <PackageReference Include="NAudio.WinMM" Version="2.4.0" />
     <PackageReference Include="Scintilla.NET.WinForms" Version="1.0.11.5320" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\NESCompiler\NESCompiler.csproj" />
-    <ProjectReference Include="..\NESEmulator\NESEmulator.csproj" />
+    <ProjectReference Include="..\NesSharp.Core\NesSharp.Core.csproj" />
   </ItemGroup>
 
 </Project>
