@@ -8,6 +8,7 @@ public sealed class Bus
     private Cartridge? _cartridge;
     
     private readonly byte[] _cpuRam = new byte[2 * 1024];
+    public byte[] Ram => _cpuRam;
     
     private byte _dmaPage;
     private byte _dmaAddress;

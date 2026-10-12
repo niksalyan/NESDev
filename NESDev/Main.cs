@@ -347,10 +347,10 @@ function loop() {{
             }
             catch { }
 #if !DEBUG
-            if (TBMessageBox.Confirm(this, "Project is not saved!", "Do you want to save this project?") == DialogResult.Yes)
-            {
+            // if (TBMessageBox.Confirm(this, "Project is not saved!", "Do you want to save this project?") == DialogResult.Yes)
+            // {
                 // DoAction("save");
-            }
+            // }
 #else
             DoAction("save");
 #endif

@@ -18,6 +18,7 @@
                 components.Dispose();
             }
             base.Dispose(disposing);
+            DisposeEmulator(disposing);
         }
 
         #region Component Designer generated code
