@@ -2,7 +2,6 @@
 
 using NESCompiler;
 using NESDev.Models;
-using NesSharp.Core;
 using NTOSDev.Components;
 using NTOSDev.Libs;
 using System.Collections.Immutable;
@@ -38,9 +37,9 @@ namespace NTOSDev
                 DebugOutput.Clear();
                 DebugOutput.Add(new DebugLine("Compiled", false));
 
-                // cartridge = File.ReadAllBytes(@"D:\Games\NES\roms\contra.nes");
-                
-                EmulatorRuntime.BootCartridge(cartridge);
+                //cartridge = File.ReadAllBytes(@"D:\Games\NES\roms\contra.nes");
+
+                DEmulator.BootCartridge(cartridge);
             } catch (Exception ex)
             {
                 DebugOutput.Clear();
