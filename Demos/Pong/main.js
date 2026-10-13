@@ -89,8 +89,10 @@ while (true) {
     // --------------------------------
 
     if (ballX < 24) {
-        if (ballY > paddleY - 12) {
-            if (ballY < paddleY + 12) {
+		var tmp1 = paddleY - 12;
+		var tmp2 = paddleY + 12;
+        if (ballY > tmp1) {
+            if (ballY < tmp2) {
                 ballX = 24;
                 ballVX = 3;
             }
@@ -103,8 +105,10 @@ while (true) {
     // --------------------------------
 
     if (ballX > 232) {
-        if (ballY > aiPaddleY - 12) {
-            if (ballY < aiPaddleY + 12) {
+		tmp1 = aiPaddleY - 12;
+		tmp2 = aiPaddleY + 12;
+        if (ballY > tmp1) {
+            if (ballY < tmp2) {
                 ballX = 232;
                 ballVX = 0 - 3;
             }

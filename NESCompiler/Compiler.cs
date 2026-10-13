@@ -667,40 +667,21 @@ public class Compiler : AstVisitor
     }
 
 
+
     private void EmitBinaryExpression(BinaryExpression expression)
     {
-        EmitExpression(expression.Left);
-        EmitExpression(expression.Right);
-
-        switch (expression.Operator)
-        {
-            case Operator.Addition:
-                EmitAdd();
-                break;
-
-            case Operator.Subtraction:
-                EmitSubtract();
-                break;
-            /*case Operator.Multiplication:
-                EmitMultiply();
-                break;*/
-
-            default:
-                throw new NotSupportedException(
-                    $"Operator '{expression.Operator}' is not supported.");
-        }
+        EmitNonLogicalBinaryExpression(expression);
     }
 
-    private void EmitAdd(Expression left, Expression right)
+
+
+    private void EmitAdd(Expression right)
     {
-        EmitExpression(left); // A = left
+        _prg.Add(OpCode.Clc);
 
         switch (right)
         {
             case Literal literal:
-                _prg.Add(
-                    OpCode.Clc);
-
                 _prg.Add(
                     OpCode.AdcImmediate,
                     Convert.ToByte(literal.Value));
@@ -710,29 +691,50 @@ public class Compiler : AstVisitor
                 {
                     var variable = _prg.GetVariable(identifier.Name);
 
-                    _prg.Add(OpCode.Clc);
-
                     if (variable.Address <= 0xFF)
-                    {
-                        _prg.Add(
-                            OpCode.AdcZeroPage,
-                            variable.Address);
-                    }
+                        _prg.Add(OpCode.AdcZeroPage, variable.Address);
                     else
-                    {
-                        _prg.Add(
-                            OpCode.AdcAbsolute,
-                            variable.Address);
-                    }
+                        _prg.Add(OpCode.AdcAbsolute, variable.Address);
 
                     break;
                 }
 
             default:
                 throw new NotSupportedException(
-                    "Addition supports only literals and variables as operands.");
+                    "The right operand of + must be a literal or variable.");
         }
     }
+
+    private void EmitSubtract(Expression right)
+    {
+        _prg.Add(OpCode.Sec);
+
+        switch (right)
+        {
+            case Literal literal:
+                _prg.Add(
+                    OpCode.SbcImmediate,
+                    Convert.ToByte(literal.Value));
+                break;
+
+            case Identifier identifier:
+                {
+                    var variable = _prg.GetVariable(identifier.Name);
+
+                    if (variable.Address <= 0xFF)
+                        _prg.Add(OpCode.SbcZeroPage, variable.Address);
+                    else
+                        _prg.Add(OpCode.SbcAbsolute, variable.Address);
+
+                    break;
+                }
+
+            default:
+                throw new NotSupportedException(
+                    "The right operand of - must be a literal or variable.");
+        }
+    }
+
 
 
     private void EmitSubtract(Expression left, Expression right)
@@ -824,11 +826,12 @@ public class Compiler : AstVisitor
 
 
 
+
     private void EmitNonLogicalBinaryExpression(Expression expression)
     {
-        var operations = new List<(Operator Operator, Expression Operand)>();
+        var operations = new List<(Operator Op, Expression Right)>();
 
-        Expression GetFirstOperand(Expression node)
+        Expression GetLeftmostOperand(Expression node)
         {
             while (node is NonLogicalBinaryExpression binary)
             {
@@ -839,29 +842,27 @@ public class Compiler : AstVisitor
             return node;
         }
 
-        var first = GetFirstOperand(expression);
+        var first = GetLeftmostOperand(expression);
 
-        // Emit the first operand into A.
         EmitExpression(first);
 
-        // The collected operations are currently right-to-left.
         operations.Reverse();
 
-        foreach (var (op, operand) in operations)
+        foreach (var (op, right) in operations)
         {
             switch (op)
             {
                 case Operator.Addition:
-                    EmitAdd(operand);
+                    EmitAdd(right);
                     break;
 
                 case Operator.Subtraction:
-                    EmitSubtract(operand);
+                    EmitSubtract(right);
                     break;
 
                 default:
                     throw new NotSupportedException(
-                        $"Operator '{op}' is not supported. Only + and - are allowed.");
+                        $"Only + and - are supported in arithmetic expressions. Found '{op}'.");
             }
         }
     }
