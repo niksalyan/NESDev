@@ -46,9 +46,21 @@ namespace NTOSDev
 
             spriteEditor.SetChrBytes(Tileset.GetSprites());
             tileEditor.SetChrBytes(Tileset.GetTiles());
+
+            spriteEditor.SetColors([
+                Color.Black,
+                Color.DarkGray,
+                Color.LightGray,
+                Color.White
+                ]);
+
+            tileEditor.SetColors([
+                Color.Black,
+                Color.DarkGray,
+                Color.LightGray,
+                Color.White
+                ]);
         }
-
-
 
         public static void Compile(string src)
         {

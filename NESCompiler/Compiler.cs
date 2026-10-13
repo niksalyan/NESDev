@@ -16,9 +16,7 @@ public class Compiler : AstVisitor
 
     public const byte ExpressionTemp = 0xEF;
 
-    private const int DelayCounterAddress = 0x01FF;
-
-
+    private Dictionary<string, byte> _constants = null;
 
     private static readonly Parser _parser = new Parser(new ParserOptions()
     {
@@ -35,6 +33,7 @@ public class Compiler : AstVisitor
             this,
             _prg);
         _prg.Variables.Clear();
+        _constants = Constants.GetConstants();
 
         
 
@@ -166,6 +165,13 @@ public class Compiler : AstVisitor
                 throw new InvalidOperationException(
                     $"Variable '{identifier.Name}' must have a value.");
 
+            if (variableDeclaration.Kind == VariableDeclarationKind.Const)
+            {
+                Literal literal = (Literal)declaration.Init;
+                _constants[identifier.Name] = Convert.ToByte(literal?.Value ?? 0);
+                return null;
+            }
+
             var variable = _prg.DeclareVariable(
                 identifier.Name,
                 VariableType.Byte,
@@ -293,6 +299,12 @@ public class Compiler : AstVisitor
         if (assignmentExpression.Operator != Operator.Assignment)
             throw new NotSupportedException(
                 $"Assignment operator '{assignmentExpression.Operator}' is not supported.");
+
+        if (_constants.ContainsKey(identifier.Name))
+        {
+            throw new InvalidOperationException(
+                $"Cannot assign to constant '{identifier.Name}'.");
+        }
 
         var variable = _prg.GetVariable(identifier.Name);
 
@@ -600,6 +612,7 @@ public class Compiler : AstVisitor
             return;
         }
 
+        
         switch (expression)
         {
             case Literal literal:

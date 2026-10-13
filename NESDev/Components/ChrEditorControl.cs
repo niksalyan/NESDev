@@ -39,6 +39,8 @@ namespace NTOSDev.Controls
         private readonly NumericUpDown _widthInput;
         private readonly NumericUpDown _heightInput;
 
+        private readonly Label _tileIndexLabel;
+
         public event EventHandler ChrChanged;
         public event EventHandler SelectionChanged;
 
@@ -146,7 +148,22 @@ namespace NTOSDev.Controls
                 Panel2MinSize = 10
             };
 
+            
+
             root.Controls.Add(split, 0, 1);
+
+
+            var sheetContainer = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 2
+            };
+
+            sheetContainer.RowStyles.Add(
+                new RowStyle(SizeType.Percent, 100));
+            sheetContainer.RowStyles.Add(
+                new RowStyle(SizeType.Absolute, 30));
 
             var sheetHost = new Panel
             {
@@ -162,7 +179,20 @@ namespace NTOSDev.Controls
             };
 
             sheetHost.Controls.Add(_sheet);
-            split.Panel1.Controls.Add(sheetHost);
+
+            _tileIndexLabel = new Label
+            {
+                Dock = DockStyle.Fill,
+                Text = "Tile: --",
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(5, 0, 0, 0)
+            };
+
+            sheetContainer.Controls.Add(sheetHost, 0, 0);
+            sheetContainer.Controls.Add(_tileIndexLabel, 0, 1);
+
+            split.Panel1.Controls.Add(sheetContainer);
+
 
             var spriteHost = new Panel
             {
@@ -228,6 +258,20 @@ namespace NTOSDev.Controls
                     (int)_widthInput.Value,
                     (int)_heightInput.Value);
             };
+
+            split.SplitterDistance = 250;
+        }
+
+        private void UpdateHoveredTile(int x, int y)
+        {
+            const int cellSize = 18;
+
+            int tileX = Math.Clamp(x / cellSize, 0, 15);
+            int tileY = Math.Clamp(y / cellSize, 0, 15);
+            int index = tileY * 16 + tileX;
+
+            _tileIndexLabel.Text =
+                $"Tile: {index} (0x{index:X2}) | X: {tileX}, Y: {tileY}";
         }
 
         // ---------------------------------------------------------
@@ -614,9 +658,9 @@ namespace NTOSDev.Controls
                                 tx * 8 + px,
                                 ty * 8 + py);
 
-                            int colorIndex = c.A < 128
-                                ? 0
-                                : FindNearestColor(c);
+
+                            int colorBw = (c.R + c.G + c.B) / 3 / 85;
+                            int colorIndex = Math.Clamp(colorBw, 0, 3);
 
                             WritePixelRaw(tile, px, py, colorIndex);
                         }
@@ -920,6 +964,8 @@ namespace NTOSDev.Controls
             {
                 base.OnMouseMove(e);
 
+                _owner.UpdateHoveredTile(e.X, e.Y);
+
                 if (_owner._selecting)
                     UpdateSelection(e.Location);
             }
@@ -1006,6 +1052,7 @@ namespace NTOSDev.Controls
                     }
                 }
 
+
                 using var gridPen = new Pen(
                     Color.FromArgb(65, 65, 65));
 
@@ -1053,6 +1100,8 @@ namespace NTOSDev.Controls
                         width * Zoom,
                         y * Zoom);
                 }
+
+
             }
 
             protected override void OnMouseDown(MouseEventArgs e)
