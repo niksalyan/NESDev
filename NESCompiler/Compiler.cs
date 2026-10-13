@@ -167,9 +167,19 @@ public class Compiler : AstVisitor
 
             if (variableDeclaration.Kind == VariableDeclarationKind.Const)
             {
-                Literal literal = (Literal)declaration.Init;
-                _constants[identifier.Name] = Convert.ToByte(literal?.Value ?? 0);
-                return null;
+                if (_constants.ContainsKey(identifier.Name))
+                    throw new InvalidOperationException(
+                        $"Constant '{identifier.Name}' is already defined.");
+
+                if (declaration.Init is not Literal literal)
+                    throw new NotSupportedException(
+                        "Constants must be initialized with a numeric literal.");
+
+                _constants.Add(
+                    identifier.Name,
+                    Convert.ToByte(literal.Value));
+
+                continue;
             }
 
             var variable = _prg.DeclareVariable(
@@ -623,20 +633,18 @@ public class Compiler : AstVisitor
 
             case Identifier identifier:
                 {
+                    if (_constants.TryGetValue(identifier.Name, out byte value))
+                    {
+                        _prg.Add(OpCode.LdaImmediate, value);
+                        return;
+                    }
+
                     var variable = _prg.GetVariable(identifier.Name);
 
                     if (variable.Address <= 0xFF)
-                    {
-                        _prg.Add(
-                            OpCode.LdaZeroPage,
-                            variable.Address);
-                    }
+                        _prg.Add(OpCode.LdaZeroPage, variable.Address);
                     else
-                    {
-                        _prg.Add(
-                            OpCode.LdaAbsolute,
-                            variable.Address);
-                    }
+                        _prg.Add(OpCode.LdaAbsolute, variable.Address);
 
                     return;
                 }
@@ -680,6 +688,12 @@ public class Compiler : AstVisitor
 
             case Identifier identifier:
                 {
+                    if (_constants.TryGetValue(identifier.Name, out byte value))
+                    {
+                        _prg.Add(OpCode.AdcImmediate, value);
+                        break;
+                    }
+
                     var variable = _prg.GetVariable(identifier.Name);
 
                     if (variable.Address <= 0xFF)
@@ -710,6 +724,12 @@ public class Compiler : AstVisitor
 
             case Identifier identifier:
                 {
+                    if (_constants.TryGetValue(identifier.Name, out byte value))
+                    {
+                        _prg.Add(OpCode.SbcImmediate, value);
+                        break;
+                    }
+
                     var variable = _prg.GetVariable(identifier.Name);
 
                     if (variable.Address <= 0xFF)
@@ -723,48 +743,6 @@ public class Compiler : AstVisitor
             default:
                 throw new NotSupportedException(
                     "The right operand of - must be a literal or variable.");
-        }
-    }
-
-
-
-    private void EmitSubtract(Expression left, Expression right)
-    {
-        EmitExpression(left); // A = left
-
-        _prg.Add(OpCode.Sec);
-
-        switch (right)
-        {
-            case Literal literal:
-                _prg.Add(
-                    OpCode.SbcImmediate,
-                    Convert.ToByte(literal.Value));
-                break;
-
-            case Identifier identifier:
-                {
-                    var variable = _prg.GetVariable(identifier.Name);
-
-                    if (variable.Address <= 0xFF)
-                    {
-                        _prg.Add(
-                            OpCode.SbcZeroPage,
-                            variable.Address);
-                    }
-                    else
-                    {
-                        _prg.Add(
-                            OpCode.SbcAbsolute,
-                            variable.Address);
-                    }
-
-                    break;
-                }
-
-            default:
-                throw new NotSupportedException(
-                    "Subtraction supports only literals and variables as operands.");
         }
     }
 

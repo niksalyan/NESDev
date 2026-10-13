@@ -7,14 +7,14 @@ var ballVY = 3;
 var paddleY = 100;
 var aiPaddleY = 100;     
  
-const MEHE = 12;
+const BGCOLOR = 12;
 
 
 var score1 = 0;
 var score2 = 0;
 
 // Set the shared background color.
-backdrop(MEHE);
+backdrop(BGCOLOR);
 
 // Set background palette 0's three additional colors.
 backgroundPalette(0, 5, 0, 0);
