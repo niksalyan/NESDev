@@ -51,42 +51,74 @@ namespace NESCompiler
                     Sprite(args);
                     return VariableType.None;
 
-                case "frame":
-                    RequireNoArguments(args, "frame");
+                case "sync":
+                    RequireNoArguments(args, "sync");
                     Input();
                     EmitWaitVBlank();
                     return VariableType.None;
 
                 case "A1":
-                    A1();
+                    A(Controller1Address);
                     return VariableType.Byte;
 
                 case "B1":
-                    B1();
+                    B(Controller1Address);
                     return VariableType.Byte;
 
                 case "START1":
-                    Start1();
+                    Start(Controller1Address);
                     return VariableType.Byte;
 
                 case "SELECT1":
-                    Select1();
+                    Select(Controller1Address);
                     return VariableType.Byte;
 
                 case "UP1":
-                    Up1();
+                    Up(Controller1Address);
                     return VariableType.Byte;
 
                 case "DOWN1":
-                    Down1();
+                    Down(Controller1Address);
                     return VariableType.Byte;
 
                 case "LEFT1":
-                    Left1();
+                    Left(Controller1Address);
                     return VariableType.Byte;
 
                 case "RIGHT1":
-                    Right1();
+                    Right(Controller1Address);
+                    return VariableType.Byte;
+
+                case "A2":
+                    A(Controller2Address);
+                    return VariableType.Byte;
+
+                case "B2":
+                    B(Controller2Address);
+                    return VariableType.Byte;
+
+                case "START2":
+                    Start(Controller2Address);
+                    return VariableType.Byte;
+
+                case "SELECT2":
+                    Select(Controller2Address);
+                    return VariableType.Byte;
+
+                case "UP2":
+                    Up(Controller2Address);
+                    return VariableType.Byte;
+
+                case "DOWN2":
+                    Down(Controller2Address);
+                    return VariableType.Byte;
+
+                case "LEFT2":
+                    Left(Controller2Address);
+                    return VariableType.Byte;
+
+                case "RIGHT2":
+                    Right(Controller2Address);
                     return VariableType.Byte;
 
                 default:
@@ -676,7 +708,7 @@ namespace NESCompiler
             // --------------------------------------------------------
 
             EmitByteArgument(
-                args[3],
+                args[2],
                 "sprite",
                 "y");
 
@@ -689,7 +721,7 @@ namespace NESCompiler
             // --------------------------------------------------------
 
             EmitByteArgument(
-                args[1],
+                args[3],
                 "sprite",
                 "tile");
 
@@ -714,7 +746,7 @@ namespace NESCompiler
             // --------------------------------------------------------
 
             EmitByteArgument(
-                args[2],
+                args[1],
                 "sprite",
                 "x");
 
@@ -842,59 +874,59 @@ namespace NESCompiler
         // Controller buttons
         // ============================================================
 
-        private void A1()
+        private void A(byte addr)
         {
             EmitButton(
-                Controller1Address,
+                addr,
                 0x80);
         }
 
-        private void B1()
+        private void B(byte addr)
         {
             EmitButton(
-                Controller1Address,
+                addr,
                 0x40);
         }
 
-        private void Select1()
+        private void Select(byte addr)
         {
             EmitButton(
-                Controller1Address,
+                addr,
                 0x20);
         }
 
-        private void Start1()
+        private void Start(byte addr)
         {
             EmitButton(
-                Controller1Address,
+                addr,
                 0x10);
         }
 
-        private void Up1()
+        private void Up(byte addr)
         {
             EmitButton(
-                Controller1Address,
+                addr,
                 0x08);
         }
 
-        private void Down1()
+        private void Down(byte addr)
         {
             EmitButton(
-                Controller1Address,
+                addr,
                 0x04);
         }
 
-        private void Left1()
+        private void Left(byte addr)
         {
             EmitButton(
-                Controller1Address,
+                addr,
                 0x02);
         }
 
-        private void Right1()
+        private void Right(byte addr)
         {
             EmitButton(
-                Controller1Address,
+                addr,
                 0x01);
         }
 

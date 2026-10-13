@@ -18,7 +18,6 @@ var score1Tile = 0;
 var score2 = 0;
 var score2Tile = 0;
 
-frame();
 
 for(var x = 0; x < 32; x = x + 1) {
 	tileAt(x, 2, 128);
@@ -153,40 +152,42 @@ while (true) {
 	score1Tile = score1 + 16;
 	score2Tile = score2 + 16;
 
-    // --------------------------------
-    // SYNCHRONIZE WITH NEXT FRAME
-    // --------------------------------
-
-    frame();
-
-	tileAt(15, 4, score1Tile);
-	tileAt(16, 4, 26);
-	tileAt(17, 4, score2Tile);
-	
-	
-    // --------------------------------
+	// --------------------------------
     // DRAW PLAYER PADDLE
     // --------------------------------
 
-    sprite(1, 128, 16, paddleY);
-	sprite(2, 128, 16, paddleY2);
-	sprite(3, 128, 16, paddleY3);
+    sprite(1, 16, paddleY, 128);
+	sprite(2, 16, paddleY2, 128);
+	sprite(3, 16, paddleY3, 128);
     
 
     // --------------------------------
     // DRAW AI PADDLE
     // --------------------------------
 
-    sprite(5, 128, 240, aiPaddleY);
-	sprite(6, 128, 240, aiPaddleY2);
-	sprite(7, 128, 240, aiPaddleY3);
+    sprite(5, 240, aiPaddleY, 128);
+	sprite(6, 240, aiPaddleY2, 128);
+	sprite(7, 240, aiPaddleY3, 128);
     
 
     // --------------------------------
     // DRAW BALL
     // --------------------------------
 
-    sprite(8, 211, ballX, ballY);
+    sprite(8, ballX, ballY, 211);
+
+    // --------------------------------
+    // SYNCHRONIZE WITH NEXT FRAME
+    // --------------------------------
+
+    sync();
+
+	tileAt(15, 4, score1Tile);
+	tileAt(16, 4, 26);
+	tileAt(17, 4, score2Tile);
+	
+	
+    
 	
 
 }

@@ -2,7 +2,6 @@
 using Acornima.Ast;
 using com.clusterrr.Famicom.Containers;
 using System.Diagnostics;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace NESCompiler;
 
@@ -13,14 +12,13 @@ public class Compiler : AstVisitor
     public List<Instruction> Instructions => _prg?.Instructions ?? [];
 
     private CompilerFunctions _compilerFunctions;
-    private const byte ExpressionStackBase = 0xF0;
-    private const byte ExpressionStackSize = 16;
+
 
     public const byte ExpressionTemp = 0xEF;
 
     private const int DelayCounterAddress = 0x01FF;
 
-    private byte _expressionStackDepth;
+
 
     private static readonly Parser _parser = new Parser(new ParserOptions()
     {
@@ -33,7 +31,6 @@ public class Compiler : AstVisitor
     {
         _src = source;
         _prg = new Bytecode();
-        _expressionStackDepth = 0;
         _compilerFunctions = new CompilerFunctions(
             this,
             _prg);
@@ -92,7 +89,7 @@ public class Compiler : AstVisitor
         _prg.Add(OpCode.StaAbsolute, 0x2001);
 
         // Wait for VBlank.
-        _compilerFunctions.Execute("frame");
+        _compilerFunctions.Execute("sync");
 
         // Reset PPU address/scroll latch.
         _prg.Add(OpCode.LdaAbsolute, 0x2002);
@@ -123,7 +120,7 @@ public class Compiler : AstVisitor
         _prg.Add(OpCode.StaAbsolute, 0x2005);
 
         // Wait for another VBlank before enabling rendering.
-        _compilerFunctions.Execute("frame");
+        _compilerFunctions.Execute("sync");
 
         // ------------------------------------------------------------
         // Enable background rendering
@@ -170,32 +167,29 @@ public class Compiler : AstVisitor
                 throw new InvalidOperationException(
                     $"Variable '{identifier.Name}' must have a value.");
 
+            var variable = _prg.DeclareVariable(
+                identifier.Name,
+                VariableType.Byte,
+                VariableDeclarationKind.Var);
 
-            var variable = _prg.DeclareVariable(identifier.Name, VariableType.Byte, VariableDeclarationKind.Var);
             EmitExpression(declaration.Init);
-
-            Pop();
 
             if (variable.Address <= 0xFF)
             {
-                _prg.Add(
-                    OpCode.StaZeroPage,
-                    variable.Address);
+                _prg.Add(OpCode.StaZeroPage, variable.Address);
             }
             else
             {
-                _prg.Add(
-                    OpCode.StaAbsolute,
-                    variable.Address);
+                _prg.Add(OpCode.StaAbsolute, variable.Address);
             }
-
         }
 
         return null;
     }
 
+
     protected override object? VisitIfStatement(
-    Acornima.Ast.IfStatement ifStatement)
+        Acornima.Ast.IfStatement ifStatement)
     {
         var test = ifStatement.Test;
 
@@ -206,20 +200,14 @@ public class Compiler : AstVisitor
             var branchIndexes =
                 EmitComparisonBranch(binary.Operator);
 
-
-            // Consequent.
             Visit(ifStatement.Consequent);
 
             if (ifStatement.Alternate != null)
             {
-                // Skip else after consequent.
                 int jmpIndex = _prg.Instructions.Count;
 
-                _prg.Add(
-                    OpCode.JmpAbsolute,
-                    0);
+                _prg.Add(OpCode.JmpAbsolute, 0);
 
-                // False condition goes here.
                 int elseStart = _prg.Instructions.Count;
 
                 foreach (int index in branchIndexes)
@@ -227,94 +215,74 @@ public class Compiler : AstVisitor
                     var old = _prg.Instructions[index];
 
                     _prg.Instructions[index] =
-                        new Instruction(
-                            old.OpCode,
-                            elseStart);
+                        new Instruction(old.OpCode, elseStart);
                 }
 
-                // Else.
                 Visit(ifStatement.Alternate);
 
-                // Patch jump over else.
                 int afterElse = _prg.Instructions.Count;
 
                 var jmpOld = _prg.Instructions[jmpIndex];
 
                 _prg.Instructions[jmpIndex] =
-                    new Instruction(
-                        jmpOld.OpCode,
-                        afterElse);
+                    new Instruction(jmpOld.OpCode, afterElse);
             }
             else
             {
-                // No else. False condition skips consequent.
-                int afterConsequent =
-                    _prg.Instructions.Count;
+                int afterConsequent = _prg.Instructions.Count;
 
                 foreach (int index in branchIndexes)
                 {
                     var old = _prg.Instructions[index];
 
                     _prg.Instructions[index] =
-                        new Instruction(
-                            old.OpCode,
-                            afterConsequent);
+                        new Instruction(old.OpCode, afterConsequent);
                 }
             }
 
             return null;
         }
 
-        // Normal boolean/numeric expression.
+        // Evaluate the condition into A.
         EmitExpression(test);
-        Pop();
 
+        // Branch if A == 0.
+        // EmitExpression must leave the result in A.
         int beqIndex = _prg.Instructions.Count;
 
-        _prg.Add(
-            OpCode.Beq,
-            0);
+        _prg.Add(OpCode.Beq, 0);
 
-        // Consequent.
         Visit(ifStatement.Consequent);
 
         if (ifStatement.Alternate != null)
         {
             int jmpIndex = _prg.Instructions.Count;
 
-            _prg.Add(
-                OpCode.JmpAbsolute,
-                0);
+            _prg.Add(OpCode.JmpAbsolute, 0);
 
             int elseStart = _prg.Instructions.Count;
 
             _prg.Instructions[beqIndex] =
-                new Instruction(
-                    OpCode.Beq,
-                    elseStart);
+                new Instruction(OpCode.Beq, elseStart);
 
             Visit(ifStatement.Alternate);
 
             int afterElse = _prg.Instructions.Count;
 
             _prg.Instructions[jmpIndex] =
-                new Instruction(
-                    OpCode.JmpAbsolute,
-                    afterElse);
+                new Instruction(OpCode.JmpAbsolute, afterElse);
         }
         else
         {
-            int afterConsequent =
-                _prg.Instructions.Count;
+            int afterConsequent = _prg.Instructions.Count;
 
             _prg.Instructions[beqIndex] =
-                new Instruction(
-                    OpCode.Beq,
-                    afterConsequent);
+                new Instruction(OpCode.Beq, afterConsequent);
         }
 
         return null;
     }
+
 
     protected override object? VisitAssignmentExpression(
     AssignmentExpression assignmentExpression)
@@ -329,28 +297,24 @@ public class Compiler : AstVisitor
 
         var variable = _prg.GetVariable(identifier.Name);
 
+        // Result must be left in the 6502 accumulator (A).
         EmitExpression(assignmentExpression.Right);
-
-        Pop();
 
         if (variable.Address <= 0xFF)
         {
-            _prg.Add(
-                OpCode.StaZeroPage,
-                variable.Address);
+            _prg.Add(OpCode.StaZeroPage, variable.Address);
         }
         else
         {
-            _prg.Add(
-                OpCode.StaAbsolute,
-                variable.Address);
+            _prg.Add(OpCode.StaAbsolute, variable.Address);
         }
 
         return null;
     }
 
+
     protected override object? VisitWhileStatement(
-    Acornima.Ast.WhileStatement whileStatement)
+        Acornima.Ast.WhileStatement whileStatement)
     {
         int conditionStart = _prg.Instructions.Count;
 
@@ -364,12 +328,9 @@ public class Compiler : AstVisitor
             Visit(whileStatement.Body);
 
             // Loop back to condition.
-            _prg.Add(
-                OpCode.JmpAbsolute,
-                conditionStart);
+            _prg.Add(OpCode.JmpAbsolute, conditionStart);
 
-            int afterWhile =
-                _prg.Instructions.Count;
+            int afterWhile = _prg.Instructions.Count;
 
             // Patch the absolute jumps used for exiting the loop.
             foreach (int index in jumpIndexes)
@@ -377,9 +338,7 @@ public class Compiler : AstVisitor
                 var old = _prg.Instructions[index];
 
                 _prg.Instructions[index] =
-                    new Instruction(
-                        OpCode.JmpAbsolute,
-                        afterWhile);
+                    new Instruction(OpCode.JmpAbsolute, afterWhile);
             }
 
             return null;
@@ -387,44 +346,37 @@ public class Compiler : AstVisitor
 
         // Simple truthy while.
         EmitExpression(whileStatement.Test);
-        Pop();
 
-        // If false, skip over the JMP.
-        int branchIndex =
-            _prg.Instructions.Count;
+        // Ensure Zero flag reflects A == 0.
+        _prg.Add(OpCode.CmpImmediate, 0);
 
-        _prg.Add(
-            OpCode.Bne,
-            branchIndex + 2);
+        // If nonzero, skip the exit jump.
+        int branchIndex = _prg.Instructions.Count;
+
+        _prg.Add(OpCode.Bne, branchIndex + 2);
 
         // Far jump to loop exit.
-        int exitJumpIndex =
-            _prg.Instructions.Count;
+        int exitJumpIndex = _prg.Instructions.Count;
 
-        _prg.Add(
-            OpCode.JmpAbsolute,
-            0);
+        _prg.Add(OpCode.JmpAbsolute, 0);
 
         Visit(whileStatement.Body);
 
         // Loop back to condition.
-        _prg.Add(
-            OpCode.JmpAbsolute,
-            conditionStart);
+        _prg.Add(OpCode.JmpAbsolute, conditionStart);
 
-        int afterWhileSimple =
-            _prg.Instructions.Count;
+        int afterWhileSimple = _prg.Instructions.Count;
 
         _prg.Instructions[exitJumpIndex] =
-            new Instruction(
-                OpCode.JmpAbsolute,
-                afterWhileSimple);
+            new Instruction(OpCode.JmpAbsolute, afterWhileSimple);
 
         return null;
     }
 
+
+
     protected override object? VisitForStatement(
-    Acornima.Ast.ForStatement forStatement)
+        Acornima.Ast.ForStatement forStatement)
     {
         // Initialization
         if (forStatement.Init != null)
@@ -432,7 +384,7 @@ public class Compiler : AstVisitor
 
         int conditionStart = _prg.Instructions.Count;
 
-        // Condition
+        // Comparison condition
         if (forStatement.Test is NonLogicalBinaryExpression binary)
         {
             EmitComparison(binary);
@@ -448,9 +400,7 @@ public class Compiler : AstVisitor
                 Visit(forStatement.Update);
 
             // Loop back to condition
-            _prg.Add(
-                OpCode.JmpAbsolute,
-                conditionStart);
+            _prg.Add(OpCode.JmpAbsolute, conditionStart);
 
             int afterFor = _prg.Instructions.Count;
 
@@ -460,9 +410,7 @@ public class Compiler : AstVisitor
                 var old = _prg.Instructions[index];
 
                 _prg.Instructions[index] =
-                    new Instruction(
-                        old.OpCode,
-                        afterFor);
+                    new Instruction(old.OpCode, afterFor);
             }
 
             return null;
@@ -472,31 +420,25 @@ public class Compiler : AstVisitor
         if (forStatement.Test != null)
         {
             EmitExpression(forStatement.Test);
-            Pop();
 
-            int branchIndex =
-                _prg.Instructions.Count;
+            // Set Zero flag based on accumulator A.
+            _prg.Add(OpCode.CmpImmediate, 0);
 
-            _prg.Add(
-                OpCode.Beq,
-                0);
+            int branchIndex = _prg.Instructions.Count;
+
+            _prg.Add(OpCode.Beq, 0);
 
             Visit(forStatement.Body);
 
             if (forStatement.Update != null)
                 Visit(forStatement.Update);
 
-            _prg.Add(
-                OpCode.JmpAbsolute,
-                conditionStart);
+            _prg.Add(OpCode.JmpAbsolute, conditionStart);
 
-            int afterFor =
-                _prg.Instructions.Count;
+            int afterFor = _prg.Instructions.Count;
 
             _prg.Instructions[branchIndex] =
-                new Instruction(
-                    OpCode.Beq,
-                    afterFor);
+                new Instruction(OpCode.Beq, afterFor);
 
             return null;
         }
@@ -507,12 +449,11 @@ public class Compiler : AstVisitor
         if (forStatement.Update != null)
             Visit(forStatement.Update);
 
-        _prg.Add(
-            OpCode.JmpAbsolute,
-            conditionStart);
+        _prg.Add(OpCode.JmpAbsolute, conditionStart);
 
         return null;
     }
+
 
     protected override object? VisitCallExpression(
     CallExpression callExpression)
@@ -535,36 +476,39 @@ public class Compiler : AstVisitor
             arguments);
     }
 
-    // Evaluate expression and store accumulator A into the given address.
-    private void EmitExpressionToAddress(Expression expression, int address)
-    {
-        EmitExpression(expression);
-        Pop();
-
-        if (address <= 0xFF)
-        {
-            _prg.Add(OpCode.StaZeroPage, address);
-        }
-        else
-        {
-            _prg.Add(OpCode.StaAbsolute, address);
-        }
-    }
-
     private void EmitComparison(NonLogicalBinaryExpression binary)
     {
         EmitExpression(binary.Left);
-        EmitExpression(binary.Right);
 
-        // Right operand -> temporary
-        Pop();
-        _prg.Add(OpCode.StaZeroPage, ExpressionTemp);
+        if (binary.Right is Literal literal)
+        {
+            // Compare A with an immediate constant.
+            _prg.Add(
+                OpCode.CmpImmediate,
+                Convert.ToByte(literal.Value));
+        }
+        else if (binary.Right is Identifier identifier)
+        {
+            var variable = _prg.GetVariable(identifier.Name);
 
-        // Left operand -> A
-        Pop();
-
-        // A <=> right
-        _prg.Add(OpCode.CmpZeroPage, ExpressionTemp);
+            if (variable.Address <= 0xFF)
+            {
+                _prg.Add(
+                    OpCode.CmpZeroPage,
+                    variable.Address);
+            }
+            else
+            {
+                _prg.Add(
+                    OpCode.CmpAbsolute,
+                    variable.Address);
+            }
+        }
+        else
+        {
+            throw new NotSupportedException(
+                "Comparison operands must be simple literals or variables.");
+        }
     }
 
 
@@ -669,11 +613,12 @@ public class Compiler : AstVisitor
         return jumpIndex;
     }
 
+
     public void EmitExpression(Expression expression)
     {
-        if (expression.GetType().Name == "NonLogicalBinaryExpression")
+        if (expression is NonLogicalBinaryExpression nonLogicalBinary)
         {
-            EmitNonLogicalBinaryExpression(expression);
+            EmitNonLogicalBinaryExpression(nonLogicalBinary);
             return;
         }
 
@@ -683,8 +628,6 @@ public class Compiler : AstVisitor
                 _prg.Add(
                     OpCode.LdaImmediate,
                     Convert.ToByte(literal.Value));
-
-                Push();
                 return;
 
             case Identifier identifier:
@@ -704,19 +647,12 @@ public class Compiler : AstVisitor
                             variable.Address);
                     }
 
-                    Push();
                     return;
                 }
 
             case CallExpression callExpression:
                 {
-                    var type = VisitCallExpression(callExpression);
-
-                    if (type is VariableType.Byte)
-                    {
-                        Push();
-                    }
-
+                    VisitCallExpression(callExpression);
                     return;
                 }
 
@@ -729,6 +665,7 @@ public class Compiler : AstVisitor
                     $"Expression '{expression.GetType().Name}' is not supported.");
         }
     }
+
 
     private void EmitBinaryExpression(BinaryExpression expression)
     {
@@ -754,155 +691,224 @@ public class Compiler : AstVisitor
         }
     }
 
-    private void EmitAdd()
+    private void EmitAdd(Expression left, Expression right)
     {
-        // Stack:
-        // [left, right]
+        EmitExpression(left); // A = left
 
-        Pop();       // A = right
-        _prg.Add(OpCode.StaZeroPage, ExpressionTemp);
+        switch (right)
+        {
+            case Literal literal:
+                _prg.Add(
+                    OpCode.Clc);
 
-        Pop();       // A = left
+                _prg.Add(
+                    OpCode.AdcImmediate,
+                    Convert.ToByte(literal.Value));
+                break;
 
-        _prg.Add(OpCode.Clc);
-        _prg.Add(OpCode.AdcZeroPage, ExpressionTemp);
+            case Identifier identifier:
+                {
+                    var variable = _prg.GetVariable(identifier.Name);
 
-        Push();
+                    _prg.Add(OpCode.Clc);
+
+                    if (variable.Address <= 0xFF)
+                    {
+                        _prg.Add(
+                            OpCode.AdcZeroPage,
+                            variable.Address);
+                    }
+                    else
+                    {
+                        _prg.Add(
+                            OpCode.AdcAbsolute,
+                            variable.Address);
+                    }
+
+                    break;
+                }
+
+            default:
+                throw new NotSupportedException(
+                    "Addition supports only literals and variables as operands.");
+        }
     }
 
-    public void EmitCursorAddress(int startDepth)
+
+    private void EmitSubtract(Expression left, Expression right)
     {
-        // Reset PPU $2006 write latch.
-        _prg.Add(
-            OpCode.LdaAbsolute,
-            0x2002);
-
-        // Y
-        int yAddress =
-            ExpressionStackBase +
-            startDepth +
-            1;
-
-        _prg.Add(
-            OpCode.LdaZeroPage,
-            yAddress);
-
-        // Y * 32
-        _prg.Add(OpCode.AslAccumulator);
-        _prg.Add(OpCode.AslAccumulator);
-        _prg.Add(OpCode.AslAccumulator);
-        _prg.Add(OpCode.AslAccumulator);
-        _prg.Add(OpCode.AslAccumulator);
-
-        // Add X.
-        int xAddress =
-            ExpressionStackBase +
-            startDepth;
-
-        _prg.Add(
-            OpCode.Clc);
-
-        _prg.Add(
-            OpCode.AdcZeroPage,
-            xAddress);
-
-        // Low byte.
-        _prg.Add(
-            OpCode.StaZeroPage,
-            ExpressionTemp);
-
-        // High byte.
-        _prg.Add(
-            OpCode.LdaImmediate,
-            0x20);
-
-        _prg.Add(
-            OpCode.StaAbsolute,
-            0x2006);
-
-        // Low byte.
-        _prg.Add(
-            OpCode.LdaZeroPage,
-            ExpressionTemp);
-
-        _prg.Add(
-            OpCode.StaAbsolute,
-            0x2006);
-    }
-    private void EmitSubtract()
-    {
-        // Stack:
-        // [left, right]
-
-        Pop();       // A = right
-        _prg.Add(OpCode.StaZeroPage, ExpressionTemp);
-
-        Pop();       // A = left
+        EmitExpression(left); // A = left
 
         _prg.Add(OpCode.Sec);
-        _prg.Add(OpCode.SbcZeroPage, ExpressionTemp);
 
-        Push();
+        switch (right)
+        {
+            case Literal literal:
+                _prg.Add(
+                    OpCode.SbcImmediate,
+                    Convert.ToByte(literal.Value));
+                break;
+
+            case Identifier identifier:
+                {
+                    var variable = _prg.GetVariable(identifier.Name);
+
+                    if (variable.Address <= 0xFF)
+                    {
+                        _prg.Add(
+                            OpCode.SbcZeroPage,
+                            variable.Address);
+                    }
+                    else
+                    {
+                        _prg.Add(
+                            OpCode.SbcAbsolute,
+                            variable.Address);
+                    }
+
+                    break;
+                }
+
+            default:
+                throw new NotSupportedException(
+                    "Subtraction supports only literals and variables as operands.");
+        }
     }
+
+
+    public void EmitCursorAddress(
+        Expression x,
+        Expression y,
+        byte scratchAddress)
+    {
+        // Reset PPU $2006 write latch.
+        _prg.Add(OpCode.LdaAbsolute, 0x2002);
+
+        // Calculate Y * 32.
+        EmitExpression(y);
+
+        _prg.Add(OpCode.AslAccumulator);
+        _prg.Add(OpCode.AslAccumulator);
+        _prg.Add(OpCode.AslAccumulator);
+        _prg.Add(OpCode.AslAccumulator);
+        _prg.Add(OpCode.AslAccumulator);
+
+        // Preserve Y * 32 while loading X.
+        _prg.Add(OpCode.StaZeroPage, scratchAddress);
+
+        EmitExpression(x);
+
+        // A = (Y * 32) + X.
+        _prg.Add(OpCode.Clc);
+        _prg.Add(OpCode.AdcZeroPage, scratchAddress);
+
+        // Write PPU address high byte ($20).
+        _prg.Add(OpCode.LdaImmediate, 0x20);
+        _prg.Add(OpCode.StaAbsolute, 0x2006);
+
+        // Write PPU address low byte.
+        EmitExpression(y);
+
+        _prg.Add(OpCode.AslAccumulator);
+        _prg.Add(OpCode.AslAccumulator);
+        _prg.Add(OpCode.AslAccumulator);
+        _prg.Add(OpCode.AslAccumulator);
+        _prg.Add(OpCode.AslAccumulator);
+
+        _prg.Add(OpCode.Clc);
+        _prg.Add(OpCode.AdcZeroPage, scratchAddress);
+
+        _prg.Add(OpCode.StaAbsolute, 0x2006);
+    }
+
+
+
 
     private void EmitNonLogicalBinaryExpression(Expression expression)
     {
-        var leftProp = expression.GetType().GetProperty("Left");
-        var rightProp = expression.GetType().GetProperty("Right");
-        var opProp = expression.GetType().GetProperty("Operator");
+        var operations = new List<(Operator Operator, Expression Operand)>();
 
-        if (leftProp == null || rightProp == null || opProp == null)
-            throw new NotSupportedException(
-                "Unsupported non-logical binary expression shape.");
-
-        var left = (Expression)leftProp.GetValue(expression)!;
-        var right = (Expression)rightProp.GetValue(expression)!;
-        var op = opProp.GetValue(expression)!;
-
-        EmitExpression(left);
-        EmitExpression(right);
-
-        string opName = op.ToString()!.ToLowerInvariant();
-
-        if (opName.Contains("add") || opName.Contains("+"))
+        Expression GetFirstOperand(Expression node)
         {
-            EmitAdd();
+            while (node is NonLogicalBinaryExpression binary)
+            {
+                operations.Add((binary.Operator, binary.Right));
+                node = binary.Left;
+            }
+
+            return node;
+        }
+
+        var first = GetFirstOperand(expression);
+
+        // Emit the first operand into A.
+        EmitExpression(first);
+
+        // The collected operations are currently right-to-left.
+        operations.Reverse();
+
+        foreach (var (op, operand) in operations)
+        {
+            switch (op)
+            {
+                case Operator.Addition:
+                    EmitAdd(operand);
+                    break;
+
+                case Operator.Subtraction:
+                    EmitSubtract(operand);
+                    break;
+
+                default:
+                    throw new NotSupportedException(
+                        $"Operator '{op}' is not supported. Only + and - are allowed.");
+            }
+        }
+    }
+
+
+
+    private void EmitFlatExpression(
+        Expression expression,
+        object parentOperator)
+    {
+        if (expression is NonLogicalBinaryExpression binary)
+        {
+            string opName = binary.Operator.ToString()!.ToLowerInvariant();
+
+            if (opName.Contains("add") || opName.Contains("+"))
+            {
+                EmitFlatExpression(binary.Left, parentOperator);
+                EmitAdd(binary.Right);
+                return;
+            }
+
+            if (opName.Contains("sub") || opName.Contains("-"))
+            {
+                EmitFlatExpression(binary.Left, parentOperator);
+                EmitSubtract(binary.Right);
+                return;
+            }
+        }
+
+        string parentOpName = parentOperator.ToString()!.ToLowerInvariant();
+
+        if (parentOpName.Contains("add") || parentOpName.Contains("+"))
+        {
+            EmitAdd(expression);
             return;
         }
 
-        if (opName.Contains("sub") || opName.Contains("-"))
+        if (parentOpName.Contains("sub") || parentOpName.Contains("-"))
         {
-            EmitSubtract();
+            EmitSubtract(expression);
             return;
         }
 
         throw new NotSupportedException(
-            $"Operator '{op}' is not supported.");
+            $"Operator '{parentOperator}' is not supported.");
     }
 
-    private void Push()
-    {
-        _prg.Add(OpCode.StaZeroPageX, ExpressionStackBase);
-        _prg.Add(OpCode.Inx);
-
-        _expressionStackDepth++;
-
-        if (_expressionStackDepth > ExpressionStackSize)
-            throw new InvalidOperationException(
-                "Expression stack overflow.");
-    }
-
-    private void Pop()
-    {
-        if (_expressionStackDepth == 0)
-            throw new InvalidOperationException(
-                "Expression stack underflow.");
-
-        _prg.Add(OpCode.Dex);
-        _prg.Add(OpCode.LdaZeroPageX, ExpressionStackBase);
-
-        _expressionStackDepth--;
-    }
 
     public string GetText(Acornima.Range range)
     {
