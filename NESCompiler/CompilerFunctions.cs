@@ -1,4 +1,5 @@
-﻿using Acornima.Ast;
+﻿
+using Acornima.Ast;
 using System;
 using System.Collections.Generic;
 
@@ -6,22 +7,20 @@ namespace NESCompiler
 {
     public class CompilerFunctions
     {
-        private readonly Compiler _compiler;
         private readonly Bytecode _prg;
+
+        private IReadOnlyList<Expression> _arguments =
+            Array.Empty<Expression>();
 
         private const byte Controller1Address = 0xEE;
         private const byte Controller2Address = 0xED;
 
-        // Existing compiler temporary.
-        // Used only by hardware intrinsics when two runtime
-        // values must temporarily coexist.
-        private const byte ExpressionTemp = 0xEF;
+        // Dedicated hardware-calculation scratch byte.
+        // Must not overlap compiler variables or other reserved RAM.
+        private const byte HardwareTemp = 0xEF;
 
-        public CompilerFunctions(
-            Compiler compiler,
-            Bytecode prg)
+        public CompilerFunctions(Compiler compiler, Bytecode prg)
         {
-            _compiler = compiler;
             _prg = prg;
         }
 
@@ -33,26 +32,28 @@ namespace NESCompiler
             string name,
             IReadOnlyList<Expression>? args = null)
         {
+            _arguments = args ?? Array.Empty<Expression>();
+
             switch (name)
             {
                 case "scroll":
-                    Scroll(args);
+                    Scroll();
                     return VariableType.None;
 
                 case "print":
-                    Print(args);
+                    Print();
                     return VariableType.None;
 
                 case "tileAt":
-                    TileAt(args);
+                    TileAt();
                     return VariableType.None;
 
                 case "sprite":
-                    Sprite(args);
+                    Sprite();
                     return VariableType.None;
 
                 case "sync":
-                    RequireNoArguments(args, "sync");
+                    RequireArguments(0, "sync");
                     Input();
                     EmitWaitVBlank();
                     return VariableType.None;
@@ -128,54 +129,39 @@ namespace NESCompiler
         }
 
         // ============================================================
-        // Argument validation
+        // Arguments
         // ============================================================
 
-        private static void RequireArguments(
-            IReadOnlyList<Expression>? args,
-            int count,
-            string functionName)
+        private void RequireArguments(int count, string functionName)
         {
-            if (args == null || args.Count != count)
+            if (_arguments.Count != count)
             {
                 throw new ArgumentException(
-                    $"{functionName} requires exactly {count} arguments.");
+                    $"{functionName}() requires exactly {count} arguments.");
             }
         }
 
-        private static void RequireNoArguments(
-            IReadOnlyList<Expression>? args,
-            string functionName)
+        private Expression GetFunctionArgument(int argumentIndex)
         {
-            if (args != null && args.Count != 0)
+            if (argumentIndex < 0 ||
+                argumentIndex >= _arguments.Count)
             {
-                throw new ArgumentException(
-                    $"{functionName} does not accept arguments.");
+                throw new ArgumentOutOfRangeException(
+                    nameof(argumentIndex),
+                    $"Function argument {argumentIndex} does not exist.");
             }
-        }
 
-        // ============================================================
-        // Hardware byte argument
-        //
-        // Allowed:
-        //     literal
-        //     variable
-        //
-        // Not allowed:
-        //     x + 1
-        //     x * 2
-        //     foo()
-        //
-        // IMPORTANT:
-        // An identifier is resolved directly to its RAM address.
-        // No expression stack is involved.
-        // ============================================================
+            return _arguments[argumentIndex];
+        }
 
         private void EmitByteArgument(
-            Expression argument,
+            int argumentIndex,
             string functionName,
             string argumentName)
         {
+            Expression argument =
+                GetFunctionArgument(argumentIndex);
+
             switch (argument)
             {
                 case NumericLiteral literal:
@@ -220,395 +206,11 @@ namespace NESCompiler
                     }
 
                 default:
-                    throw new ArgumentException(
+                    throw new NotSupportedException(
                         $"{functionName}() argument '{argumentName}' " +
-                        "must be a literal or variable.");
+                        "must be a numeric literal or variable.");
             }
         }
-
-        // ============================================================
-        // Scroll
-        //
-        // scroll(x, y)
-        //
-        // x/y:
-        //     literal
-        //     variable
-        //
-        // No expressions.
-        // ============================================================
-
-        private void Scroll(
-            IReadOnlyList<Expression>? args)
-        {
-            RequireArguments(args, 2, "scroll");
-
-            // Reset $2005 latch.
-            _prg.Add(
-                OpCode.LdaAbsolute,
-                0x2002);
-
-            EmitByteArgument(
-                args![0],
-                "scroll",
-                "x");
-
-            _prg.Add(
-                OpCode.StaAbsolute,
-                0x2005);
-
-            EmitByteArgument(
-                args[1],
-                "scroll",
-                "y");
-
-            _prg.Add(
-                OpCode.StaAbsolute,
-                0x2005);
-        }
-
-        // ============================================================
-        // TileAt
-        //
-        // tileAt(x, y, tile)
-        //
-        // x/y/tile:
-        //     literal
-        //     variable
-        //
-        // No expressions.
-        //
-        // Address:
-        //
-        //     $2000 + y * 32 + x
-        //
-        // We specialize the four possible cases:
-        //
-        //     literal/literal
-        //     variable/literal
-        //     literal/variable
-        //     variable/variable
-        //
-        // This prevents unnecessary runtime math.
-        // ============================================================
-
-        private void TileAt(
-            IReadOnlyList<Expression>? args)
-        {
-            RequireArguments(args, 3, "tileAt");
-
-            Expression x = args![0];
-            Expression y = args[1];
-            Expression tile = args[2];
-
-            bool xLiteral = x is NumericLiteral;
-            bool yLiteral = y is NumericLiteral;
-
-            // --------------------------------------------------------
-            // x = literal, y = literal
-            //
-            // Entire address known at compile time.
-            //
-            // Example:
-            //
-            // tileAt(11, 10, 128)
-            //
-            // becomes:
-            //
-            // PPUADDR($214B)
-            // LDA #$80
-            // STA $2007
-            // --------------------------------------------------------
-
-            if (xLiteral && yLiteral)
-            {
-                int xv = GetLiteralByte(
-                    x,
-                    "tileAt",
-                    "x");
-
-                int yv = GetTileY(
-                    y,
-                    "tileAt",
-                    "y");
-
-                ushort address =
-                    (ushort)(0x2000 + yv * 32 + xv);
-
-                _prg.PpuAddress(address);
-
-                EmitByteArgument(
-                    tile,
-                    "tileAt",
-                    "tile");
-
-                _prg.Add(
-                    OpCode.StaAbsolute,
-                    0x2007);
-
-                // Restore V so tileAt does not change scrolling.
-                _prg.PpuAddress(0x2000);
-
-                return;
-            }
-
-            // --------------------------------------------------------
-            // x = variable, y = literal
-            //
-            // Only x is dynamic.
-            //
-            // address = fixedBase + x
-            //
-            // Because x is 0..31, this cannot cross a page boundary.
-            // --------------------------------------------------------
-
-            if (!xLiteral && yLiteral)
-            {
-                int yv = GetTileY(
-                    y,
-                    "tileAt",
-                    "y");
-
-                int baseAddress =
-                    0x2000 + yv * 32;
-
-                // High byte is known.
-                _prg.Add(
-                    OpCode.LdaImmediate,
-                    (byte)(baseAddress >> 8));
-
-                _prg.Add(
-                    OpCode.StaAbsolute,
-                    0x2006);
-
-                // x
-                EmitByteArgument(
-                    x,
-                    "tileAt",
-                    "x");
-
-                // Low byte = base low + x.
-                _prg.Add(
-                    OpCode.Clc);
-
-                if ((baseAddress & 0xFF) == 0)
-                {
-                    // Nothing to add.
-                }
-                else
-                {
-                    _prg.Add(
-                        OpCode.AdcImmediate,
-                        (byte)(baseAddress & 0xFF));
-                }
-
-                _prg.Add(
-                    OpCode.StaAbsolute,
-                    0x2006);
-
-                // tile
-                EmitByteArgument(
-                    tile,
-                    "tileAt",
-                    "tile");
-
-                _prg.Add(
-                    OpCode.StaAbsolute,
-                    0x2007);
-
-                _prg.PpuAddress(0x2000);
-
-                return;
-            }
-
-            // --------------------------------------------------------
-            // x = literal, y = variable
-            //
-            // Need to calculate:
-            //
-            //     high = $20 + (y >> 3)
-            //     low  = (y & 7) << 5 + x
-            //
-            // Only y is dynamic.
-            // --------------------------------------------------------
-
-            if (xLiteral && !yLiteral)
-            {
-                int xv = GetLiteralByte(
-                    x,
-                    "tileAt",
-                    "x");
-
-                // y -> A
-                EmitByteArgument(
-                    y,
-                    "tileAt",
-                    "y");
-
-                // Save y.
-                _prg.Add(
-                    OpCode.StaZeroPage,
-                    ExpressionTemp);
-
-                // y >> 3
-                _prg.Add(OpCode.LsrAccumulator);
-                _prg.Add(OpCode.LsrAccumulator);
-                _prg.Add(OpCode.LsrAccumulator);
-
-                // $20 + (y >> 3)
-                _prg.Add(
-                    OpCode.Clc);
-
-                _prg.Add(
-                    OpCode.AdcImmediate,
-                    0x20);
-
-                // PPUADDR high
-                _prg.Add(
-                    OpCode.StaAbsolute,
-                    0x2006);
-
-                // Restore y.
-                _prg.Add(
-                    OpCode.LdaZeroPage,
-                    ExpressionTemp);
-
-                // y & 7
-                _prg.Add(
-                    OpCode.AndImmediate,
-                    0x07);
-
-                // * 32
-                _prg.Add(OpCode.AslAccumulator);
-                _prg.Add(OpCode.AslAccumulator);
-                _prg.Add(OpCode.AslAccumulator);
-                _prg.Add(OpCode.AslAccumulator);
-                _prg.Add(OpCode.AslAccumulator);
-
-                // Add constant x.
-                if (xv != 0)
-                {
-                    _prg.Add(
-                        OpCode.Clc);
-
-                    _prg.Add(
-                        OpCode.AdcImmediate,
-                        (byte)xv);
-                }
-
-                // PPUADDR low
-                _prg.Add(
-                    OpCode.StaAbsolute,
-                    0x2006);
-
-                // tile
-                EmitByteArgument(
-                    tile,
-                    "tileAt",
-                    "tile");
-
-                _prg.Add(
-                    OpCode.StaAbsolute,
-                    0x2007);
-
-                _prg.PpuAddress(0x2000);
-
-                return;
-            }
-
-            // --------------------------------------------------------
-            // x = variable, y = variable
-            //
-            // Both values are dynamic.
-            //
-            // We must preserve one value while calculating the other.
-            // ExpressionTemp is used only as a one-byte hardware scratch.
-            // --------------------------------------------------------
-
-            EmitByteArgument(
-                y,
-                "tileAt",
-                "y");
-
-            // Save y.
-            _prg.Add(
-                OpCode.StaZeroPage,
-                ExpressionTemp);
-
-            // high = $20 + (y >> 3)
-            _prg.Add(OpCode.LsrAccumulator);
-            _prg.Add(OpCode.LsrAccumulator);
-            _prg.Add(OpCode.LsrAccumulator);
-
-            _prg.Add(
-                OpCode.Clc);
-
-            _prg.Add(
-                OpCode.AdcImmediate,
-                0x20);
-
-            // PPUADDR high
-            _prg.Add(
-                OpCode.StaAbsolute,
-                0x2006);
-
-            // Restore y.
-            _prg.Add(
-                OpCode.LdaZeroPage,
-                ExpressionTemp);
-
-            // y & 7
-            _prg.Add(
-                OpCode.AndImmediate,
-                0x07);
-
-            // * 32
-            _prg.Add(OpCode.AslAccumulator);
-            _prg.Add(OpCode.AslAccumulator);
-            _prg.Add(OpCode.AslAccumulator);
-            _prg.Add(OpCode.AslAccumulator);
-            _prg.Add(OpCode.AslAccumulator);
-
-            // Save low base.
-            _prg.Add(
-                OpCode.StaZeroPage,
-                ExpressionTemp);
-
-            // x
-            EmitByteArgument(
-                x,
-                "tileAt",
-                "x");
-
-            // x + yLow
-            _prg.Add(
-                OpCode.Clc);
-
-            _prg.Add(
-                OpCode.AdcZeroPage,
-                ExpressionTemp);
-
-            // PPUADDR low
-            _prg.Add(
-                OpCode.StaAbsolute,
-                0x2006);
-
-            // tile
-            EmitByteArgument(
-                tile,
-                "tileAt",
-                "tile");
-
-            _prg.Add(
-                OpCode.StaAbsolute,
-                0x2007);
-
-            _prg.PpuAddress(0x2000);
-        }
-
-        // ============================================================
-        // Tile helpers
-        // ============================================================
 
         private static int GetLiteralByte(
             Expression expression,
@@ -622,8 +224,7 @@ namespace NESCompiler
                     "must be a numeric literal.");
             }
 
-            int value =
-                Convert.ToInt32(literal.Value);
+            int value = Convert.ToInt32(literal.Value);
 
             if (value < 0 || value > 255)
             {
@@ -642,11 +243,10 @@ namespace NESCompiler
             string functionName,
             string argumentName)
         {
-            int value =
-                GetLiteralByte(
-                    expression,
-                    functionName,
-                    argumentName);
+            int value = GetLiteralByte(
+                expression,
+                functionName,
+                argumentName);
 
             if (value > 29)
             {
@@ -660,31 +260,212 @@ namespace NESCompiler
         }
 
         // ============================================================
+        // Scroll
+        //
+        // scroll(x, y)
+        // ============================================================
+
+        private void Scroll()
+        {
+            RequireArguments(2, "scroll");
+
+            // Reset the PPU scroll latch.
+            _prg.Add(OpCode.LdaAbsolute, 0x2002);
+
+            EmitByteArgument(0, "scroll", "x");
+            _prg.Add(OpCode.StaAbsolute, 0x2005);
+
+            EmitByteArgument(1, "scroll", "y");
+            _prg.Add(OpCode.StaAbsolute, 0x2005);
+        }
+
+        // ============================================================
+        // TileAt
+        //
+        // tileAt(x, y, tile)
+        //
+        // x/y/tile may be numeric literals or variables.
+        // ============================================================
+
+        private void TileAt()
+        {
+            RequireArguments(3, "tileAt");
+
+            Expression x = GetFunctionArgument(0);
+            Expression y = GetFunctionArgument(1);
+
+            bool xLiteral = x is NumericLiteral;
+            bool yLiteral = y is NumericLiteral;
+
+            // Both coordinates are compile-time constants.
+            if (xLiteral && yLiteral)
+            {
+                int xv = GetLiteralByte(x, "tileAt", "x");
+                int yv = GetTileY(y, "tileAt", "y");
+
+                if (xv > 31)
+                {
+                    throw new ArgumentOutOfRangeException(
+                        "x", xv, "Tile X must be between 0 and 31.");
+                }
+
+                ushort address =
+                    (ushort)(0x2000 + yv * 32 + xv);
+
+                _prg.PpuAddress(address);
+
+                EmitByteArgument(2, "tileAt", "tile");
+                _prg.Add(OpCode.StaAbsolute, 0x2007);
+
+                _prg.PpuAddress(0x2000);
+                return;
+            }
+
+            // Variable X, constant Y.
+            if (!xLiteral && yLiteral)
+            {
+                int yv = GetTileY(y, "tileAt", "y");
+
+                int baseAddress = 0x2000 + yv * 32;
+
+                // PPU address high byte.
+                _prg.Add(
+                    OpCode.LdaImmediate,
+                    (byte)(baseAddress >> 8));
+
+                _prg.Add(OpCode.StaAbsolute, 0x2006);
+
+                // Low byte = base low byte + X.
+                _prg.Add(OpCode.LdaImmediate, 0);
+
+                EmitByteArgument(0, "tileAt", "x");
+
+                if ((baseAddress & 0xFF) != 0)
+                {
+                    // Preserve X while adding the base address.
+                    _prg.Add(OpCode.Clc);
+                    _prg.Add(
+                        OpCode.AdcImmediate,
+                        (byte)(baseAddress & 0xFF));
+                }
+
+                _prg.Add(OpCode.StaAbsolute, 0x2006);
+
+                EmitByteArgument(2, "tileAt", "tile");
+                _prg.Add(OpCode.StaAbsolute, 0x2007);
+
+                _prg.PpuAddress(0x2000);
+                return;
+            }
+
+            // Constant X, variable Y.
+            if (xLiteral && !yLiteral)
+            {
+                int xv = GetLiteralByte(x, "tileAt", "x");
+
+                if (xv > 31)
+                {
+                    throw new ArgumentOutOfRangeException(
+                        "x", xv, "Tile X must be between 0 and 31.");
+                }
+
+                EmitByteArgument(1, "tileAt", "y");
+
+                // Save Y while calculating the PPU address.
+                _prg.Add(OpCode.StaZeroPage, HardwareTemp);
+
+                // High byte = $20 + (Y >> 3).
+                _prg.Add(OpCode.LsrAccumulator);
+                _prg.Add(OpCode.LsrAccumulator);
+                _prg.Add(OpCode.LsrAccumulator);
+
+                _prg.Add(OpCode.Clc);
+                _prg.Add(OpCode.AdcImmediate, 0x20);
+                _prg.Add(OpCode.StaAbsolute, 0x2006);
+
+                // Low byte = ((Y & 7) << 5) + X.
+                _prg.Add(OpCode.LdaZeroPage, HardwareTemp);
+                _prg.Add(OpCode.AndImmediate, 0x07);
+
+                for (int i = 0; i < 5; i++)
+                    _prg.Add(OpCode.AslAccumulator);
+
+                if (xv != 0)
+                {
+                    _prg.Add(OpCode.Clc);
+                    _prg.Add(
+                        OpCode.AdcImmediate,
+                        (byte)xv);
+                }
+
+                _prg.Add(OpCode.StaAbsolute, 0x2006);
+
+                EmitByteArgument(2, "tileAt", "tile");
+                _prg.Add(OpCode.StaAbsolute, 0x2007);
+
+                _prg.PpuAddress(0x2000);
+                return;
+            }
+
+            // Variable X and variable Y.
+            EmitByteArgument(1, "tileAt", "y");
+
+            // Save Y for the low-byte calculation.
+            _prg.Add(OpCode.StaZeroPage, HardwareTemp);
+
+            // High byte = $20 + (Y >> 3).
+            _prg.Add(OpCode.LsrAccumulator);
+            _prg.Add(OpCode.LsrAccumulator);
+            _prg.Add(OpCode.LsrAccumulator);
+
+            _prg.Add(OpCode.Clc);
+            _prg.Add(OpCode.AdcImmediate, 0x20);
+            _prg.Add(OpCode.StaAbsolute, 0x2006);
+
+            // Low byte = ((Y & 7) << 5) + X.
+            _prg.Add(OpCode.LdaZeroPage, HardwareTemp);
+            _prg.Add(OpCode.AndImmediate, 0x07);
+
+            for (int i = 0; i < 5; i++)
+                _prg.Add(OpCode.AslAccumulator);
+
+            // Preserve the low-byte base.
+            _prg.Add(OpCode.StaZeroPage, HardwareTemp);
+
+            EmitByteArgument(0, "tileAt", "x");
+
+            _prg.Add(OpCode.Clc);
+            _prg.Add(OpCode.AdcZeroPage, HardwareTemp);
+            _prg.Add(OpCode.StaAbsolute, 0x2006);
+
+            EmitByteArgument(2, "tileAt", "tile");
+            _prg.Add(OpCode.StaAbsolute, 0x2007);
+
+            _prg.PpuAddress(0x2000);
+        }
+
+        // ============================================================
         // Sprite
         //
         // sprite(index, tile, x, y)
         //
-        // index must be literal.
-        // tile/x/y may be literal or variable.
-        //
-        // IMPORTANT:
-        // Variables are resolved directly to their memory addresses.
-        // No expression stack.
+        // Index is a numeric literal.
+        // Tile, X and Y may be literals or variables.
         // ============================================================
 
-        private void Sprite(
-            IReadOnlyList<Expression>? args)
+        private void Sprite()
         {
-            RequireArguments(args, 4, "sprite");
+            RequireArguments(4, "sprite");
 
-            if (args![0] is not NumericLiteral indexLiteral)
+            Expression indexExpression = GetFunctionArgument(0);
+
+            if (indexExpression is not NumericLiteral indexLiteral)
             {
                 throw new ArgumentException(
                     "sprite() index must be a numeric literal.");
             }
 
-            int index =
-                Convert.ToInt32(indexLiteral.Value);
+            int index = Convert.ToInt32(indexLiteral.Value);
 
             if (index < 0 || index >= 64)
             {
@@ -694,65 +475,30 @@ namespace NESCompiler
                     "Sprite index must be between 0 and 63.");
             }
 
-            // OAMADDR = index * 4
+            // OAMADDR = spriteIndex * 4.
             _prg.Add(
                 OpCode.LdaImmediate,
                 (byte)(index * 4));
 
-            _prg.Add(
-                OpCode.StaAbsolute,
-                0x2003);
+            _prg.Add(OpCode.StaAbsolute, 0x2003);
 
-            // --------------------------------------------------------
-            // Y
-            // --------------------------------------------------------
+            // NES OAM order: Y, tile, attributes, X.
 
-            EmitByteArgument(
-                args[2],
-                "sprite",
-                "y");
+            // Y = argument 2.
+            EmitByteArgument(2, "sprite", "y");
+            _prg.Add(OpCode.StaAbsolute, 0x2004);
 
-            _prg.Add(
-                OpCode.StaAbsolute,
-                0x2004);
+            // Tile = argument 3 (charindex).
+            EmitByteArgument(3, "sprite", "charindex");
+            _prg.Add(OpCode.StaAbsolute, 0x2004);
 
-            // --------------------------------------------------------
-            // Tile
-            // --------------------------------------------------------
+            // Attributes = 0.
+            _prg.Add(OpCode.LdaImmediate, 0x00);
+            _prg.Add(OpCode.StaAbsolute, 0x2004);
 
-            EmitByteArgument(
-                args[3],
-                "sprite",
-                "tile");
-
-            _prg.Add(
-                OpCode.StaAbsolute,
-                0x2004);
-
-            // --------------------------------------------------------
-            // Attributes
-            // --------------------------------------------------------
-
-            _prg.Add(
-                OpCode.LdaImmediate,
-                0x00);
-
-            _prg.Add(
-                OpCode.StaAbsolute,
-                0x2004);
-
-            // --------------------------------------------------------
-            // X
-            // --------------------------------------------------------
-
-            EmitByteArgument(
-                args[1],
-                "sprite",
-                "x");
-
-            _prg.Add(
-                OpCode.StaAbsolute,
-                0x2004);
+            // X = argument 1.
+            EmitByteArgument(1, "sprite", "x");
+            _prg.Add(OpCode.StaAbsolute, 0x2004);
         }
 
         // ============================================================
@@ -760,15 +506,14 @@ namespace NESCompiler
         //
         // print("HELLO")
         //
-        // Text remains literal-only.
+        // String literals are the only supported argument type here.
         // ============================================================
 
-        private void Print(
-            IReadOnlyList<Expression>? args)
+        private void Print()
         {
-            RequireArguments(args, 1, "print");
+            RequireArguments(1, "print");
 
-            if (args![0] is not StringLiteral text)
+            if (GetFunctionArgument(0) is not StringLiteral text)
             {
                 throw new ArgumentException(
                     "print() requires a string literal.");
@@ -776,97 +521,54 @@ namespace NESCompiler
 
             foreach (char c in text.Value)
             {
-                _prg.WritePpu(
-                    (byte)(c - 32));
+                _prg.WritePpu((byte)(c - 32));
             }
         }
 
         // ============================================================
-        // Frame
+        // VBlank
         // ============================================================
 
         private void EmitWaitVBlank()
         {
-            int waitStart =
-                _prg.Instructions.Count;
+            int waitStart = _prg.Instructions.Count;
 
-            _prg.Add(
-                OpCode.BitAbsolute,
-                0x2002);
-
-            _prg.Add(
-                OpCode.Bpl,
-                waitStart);
+            _prg.Add(OpCode.BitAbsolute, 0x2002);
+            _prg.Add(OpCode.Bpl, waitStart);
         }
 
         // ============================================================
-        // Controller
+        // Controller input
         // ============================================================
 
         private void Input()
         {
             // Latch controllers.
+            _prg.Add(OpCode.LdaImmediate, 0x01);
+            _prg.Add(OpCode.StaAbsolute, 0x4016);
 
-            _prg.Add(
-                OpCode.LdaImmediate,
-                0x01);
-
-            _prg.Add(
-                OpCode.StaAbsolute,
-                0x4016);
-
-            _prg.Add(
-                OpCode.LdaImmediate,
-                0x00);
-
-            _prg.Add(
-                OpCode.StaAbsolute,
-                0x4016);
+            _prg.Add(OpCode.LdaImmediate, 0x00);
+            _prg.Add(OpCode.StaAbsolute, 0x4016);
 
             // Clear controller state.
-
-            _prg.Add(
-                OpCode.LdaImmediate,
-                0x00);
-
-            _prg.Add(
-                OpCode.StaZeroPage,
-                Controller1Address);
-
-            _prg.Add(
-                OpCode.StaZeroPage,
-                Controller2Address);
+            _prg.Add(OpCode.LdaImmediate, 0x00);
+            _prg.Add(OpCode.StaZeroPage, Controller1Address);
+            _prg.Add(OpCode.StaZeroPage, Controller2Address);
 
             // Controller 1.
-
             for (int i = 0; i < 8; i++)
             {
-                _prg.Add(
-                    OpCode.LdaAbsolute,
-                    0x4016);
-
-                _prg.Add(
-                    OpCode.LsrAccumulator);
-
-                _prg.Add(
-                    OpCode.RolZeroPage,
-                    Controller1Address);
+                _prg.Add(OpCode.LdaAbsolute, 0x4016);
+                _prg.Add(OpCode.LsrAccumulator);
+                _prg.Add(OpCode.RolZeroPage, Controller1Address);
             }
 
             // Controller 2.
-
             for (int i = 0; i < 8; i++)
             {
-                _prg.Add(
-                    OpCode.LdaAbsolute,
-                    0x4017);
-
-                _prg.Add(
-                    OpCode.LsrAccumulator);
-
-                _prg.Add(
-                    OpCode.RolZeroPage,
-                    Controller2Address);
+                _prg.Add(OpCode.LdaAbsolute, 0x4017);
+                _prg.Add(OpCode.LsrAccumulator);
+                _prg.Add(OpCode.RolZeroPage, Controller2Address);
             }
         }
 
@@ -874,65 +576,31 @@ namespace NESCompiler
         // Controller buttons
         // ============================================================
 
-        private void A(byte addr)
-        {
-            EmitButton(
-                addr,
-                0x80);
-        }
+        private void A(byte address) =>
+            EmitButton(address, 0x80);
 
-        private void B(byte addr)
-        {
-            EmitButton(
-                addr,
-                0x40);
-        }
+        private void B(byte address) =>
+            EmitButton(address, 0x40);
 
-        private void Select(byte addr)
-        {
-            EmitButton(
-                addr,
-                0x20);
-        }
+        private void Select(byte address) =>
+            EmitButton(address, 0x20);
 
-        private void Start(byte addr)
-        {
-            EmitButton(
-                addr,
-                0x10);
-        }
+        private void Start(byte address) =>
+            EmitButton(address, 0x10);
 
-        private void Up(byte addr)
-        {
-            EmitButton(
-                addr,
-                0x08);
-        }
+        private void Up(byte address) =>
+            EmitButton(address, 0x08);
 
-        private void Down(byte addr)
-        {
-            EmitButton(
-                addr,
-                0x04);
-        }
+        private void Down(byte address) =>
+            EmitButton(address, 0x04);
 
-        private void Left(byte addr)
-        {
-            EmitButton(
-                addr,
-                0x02);
-        }
+        private void Left(byte address) =>
+            EmitButton(address, 0x02);
 
-        private void Right(byte addr)
-        {
-            EmitButton(
-                addr,
-                0x01);
-        }
+        private void Right(byte address) =>
+            EmitButton(address, 0x01);
 
-        private void EmitButton(
-            byte controllerAddress,
-            byte mask)
+        private void EmitButton(byte controllerAddress, byte mask)
         {
             _prg.Add(
                 OpCode.LdaZeroPage,
