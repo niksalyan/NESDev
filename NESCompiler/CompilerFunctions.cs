@@ -52,7 +52,10 @@ namespace NESCompiler
                     Sprite();
                     return VariableType.None;
                 case "sprite1x3":
-                    // Sprites(args);
+                    Sprites(1, 3, args);
+                    return VariableType.None;
+                case "sprite2x2":
+                    Sprites(2, 2, args);
                     return VariableType.None;
                 case "sync":
                     RequireArguments(0, "sync");
@@ -503,38 +506,18 @@ namespace NESCompiler
             _prg.Add(OpCode.StaAbsolute, 0x2004);
         }
 
+
         private void Sprites(
-    string functionName,
-    IReadOnlyList<Expression>? args)
+            int xSprites,
+            int ySprites,
+            IReadOnlyList<Expression>? args)
         {
-            int xSprites;
-            int ySprites;
-
-            switch (functionName)
-            {
-                case "sprite1x2":
-                    xSprites = 1;
-                    ySprites = 2;
-                    break;
-
-                case "sprite1x3":
-                    xSprites = 1;
-                    ySprites = 3;
-                    break;
-
-                case "sprite2x2":
-                    xSprites = 2;
-                    ySprites = 2;
-                    break;
-
-                default:
-                    throw new NotSupportedException(
-                        $"Sprite layout '{functionName}' is not supported.");
-            }
+           
 
             int spriteCount = xSprites * ySprites;
+            string functionName = "sprite" + xSprites + "x" + ySprites;
 
-            RequireArguments(args, 3 + spriteCount, functionName);
+            RequireArguments(3 + spriteCount, functionName);
 
             if (args![0] is not NumericLiteral indexLiteral)
             {
@@ -551,9 +534,6 @@ namespace NESCompiler
                     "The sprite layout must fit within the 64 OAM entries.");
             }
 
-            Expression x = args[1];
-            Expression y = args[2];
-
             for (int row = 0; row < ySprites; row++)
             {
                 for (int col = 0; col < xSprites; col++)
@@ -565,14 +545,12 @@ namespace NESCompiler
                     _prg.Add(
                         OpCode.LdaImmediate,
                         (byte)(currentIndex * 4));
-
                     _prg.Add(OpCode.StaAbsolute, 0x2003);
 
                     // Y coordinate = y + row * 8.
-                    EmitByteArgument(y, functionName, "y");
+                    EmitByteArgument(2, functionName, "y");
 
                     int yOffset = row * 8;
-
                     if (yOffset != 0)
                     {
                         _prg.Add(OpCode.Clc);
@@ -581,12 +559,11 @@ namespace NESCompiler
 
                     _prg.Add(OpCode.StaAbsolute, 0x2004);
 
-                    // Tile index.
+                    // Tile.
                     EmitByteArgument(
-                        args[tileArgumentIndex],
+                        tileArgumentIndex,
                         functionName,
                         $"tile{row * xSprites + col + 1}");
-
                     _prg.Add(OpCode.StaAbsolute, 0x2004);
 
                     // Attributes = 0.
@@ -594,10 +571,9 @@ namespace NESCompiler
                     _prg.Add(OpCode.StaAbsolute, 0x2004);
 
                     // X coordinate = x + col * 8.
-                    EmitByteArgument(x, functionName, "x");
+                    EmitByteArgument(1, functionName, "x");
 
                     int xOffset = col * 8;
-
                     if (xOffset != 0)
                     {
                         _prg.Add(OpCode.Clc);
@@ -608,6 +584,7 @@ namespace NESCompiler
                 }
             }
         }
+
 
         // ============================================================
         // Print

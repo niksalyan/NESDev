@@ -160,18 +160,14 @@ while (true) {
     // DRAW PLAYER PADDLE
     // --------------------------------
 
-    sprite(1, 16, paddleY, 128);
-	sprite(2, 16, paddleY2, 128);
-	sprite(3, 16, paddleY3, 128);
+    sprite1x3(1, 16, paddleY2, 128, 128, 128);
     
 
     // --------------------------------
     // DRAW AI PADDLE
     // --------------------------------
 
-    sprite(5, 240, aiPaddleY, 128);
-	sprite(6, 240, aiPaddleY2, 128);
-	sprite(7, 240, aiPaddleY3, 128);
+    sprite1x3(5, 240, aiPaddleY2, 128, 128, 128);
     
 
     // --------------------------------
