@@ -7,20 +7,18 @@ var ballVY = 3;
 var paddleY = 100;
 var aiPaddleY = 100;     
  
-const BGCOLOR = 12;
-
 
 var score1 = 0;
 var score2 = 0;
 
 // Set the shared background color.
-backdrop(BGCOLOR);
+backdrop(DARK_GRAY);
 
 // Set background palette 0's three additional colors.
 backgroundPalette(0, 5, 0, 0);
 
 // Set sprite palette 0's three visible colors.
-spritePalette(0, 16, 27, 30);
+spritePalette(0, ORANGE_2, GRAY, WHITE);
 
 
 
@@ -166,7 +164,7 @@ while (true) {
     // DRAW BALL
     // --------------------------------
 
-    sprite2x2(6, ballX - 4, ballY - 4, 107, 108, 109, 110);
+    sprite2x2(6, ballX - 4, ballY - 4, 123, 124, 125, 126);
 
     // --------------------------------
     // SYNCHRONIZE WITH NEXT FRAME

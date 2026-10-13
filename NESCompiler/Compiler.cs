@@ -18,6 +18,8 @@ public class Compiler : AstVisitor
 
     private Dictionary<string, byte> _constants = null;
 
+    public Dictionary<string, byte> Consts => _constants;
+
     private static readonly Parser _parser = new Parser(new ParserOptions()
     {
         AllowTopLevelUsing = true

@@ -7,6 +7,8 @@ namespace NESCompiler
 {
     public class CompilerFunctions
     {
+
+        private readonly Compiler _compiler;
         private readonly Bytecode _prg;
         private IReadOnlyList<Expression> _arguments = Array.Empty<Expression>();
 
@@ -16,6 +18,7 @@ namespace NESCompiler
 
         public CompilerFunctions(Compiler compiler, Bytecode prg)
         {
+            _compiler = compiler;
             _prg = prg;
         }
 
@@ -167,17 +170,34 @@ namespace NESCompiler
                     $"{functionName}() argument '{argumentName}' must be between 0 and 255.");
         }
 
-        private static int GetLiteralByte(Expression expression, string functionName, string argumentName)
+        private int GetLiteralByte(
+                    Expression expression,
+                    string functionName,
+                    string argumentName)
         {
-            if (expression is not NumericLiteral literal)
-                throw new ArgumentException($"{functionName}() argument '{argumentName}' must be a numeric literal.");
+            int value;
 
-            int value = Convert.ToInt32(literal.Value);
+            if (expression is NumericLiteral literal)
+            {
+                value = Convert.ToInt32(literal.Value);
+            }
+            else if (expression is Identifier identifier &&
+                     _compiler.Consts.ContainsKey(identifier.Name))
+            {
+                value = _compiler.Consts[identifier.Name];
+            }
+            else
+            {
+                throw new ArgumentException(
+                    $"{functionName}() argument '{argumentName}' " +
+                    "must be a numeric literal or constant.");
+            }
+
             ValidateByte(value, functionName, argumentName);
             return value;
         }
 
-        private static int GetTileY(Expression expression, string functionName, string argumentName)
+        private int GetTileY(Expression expression, string functionName, string argumentName)
         {
             int value = GetLiteralByte(expression, functionName, argumentName);
             if (value > 29)
