@@ -51,7 +51,9 @@ namespace NESCompiler
                 case "sprite":
                     Sprite();
                     return VariableType.None;
-
+                case "sprite1x3":
+                    // Sprites(args);
+                    return VariableType.None;
                 case "sync":
                     RequireArguments(0, "sync");
                     Input();
@@ -499,6 +501,112 @@ namespace NESCompiler
             // X = argument 1.
             EmitByteArgument(1, "sprite", "x");
             _prg.Add(OpCode.StaAbsolute, 0x2004);
+        }
+
+        private void Sprites(
+    string functionName,
+    IReadOnlyList<Expression>? args)
+        {
+            int xSprites;
+            int ySprites;
+
+            switch (functionName)
+            {
+                case "sprite1x2":
+                    xSprites = 1;
+                    ySprites = 2;
+                    break;
+
+                case "sprite1x3":
+                    xSprites = 1;
+                    ySprites = 3;
+                    break;
+
+                case "sprite2x2":
+                    xSprites = 2;
+                    ySprites = 2;
+                    break;
+
+                default:
+                    throw new NotSupportedException(
+                        $"Sprite layout '{functionName}' is not supported.");
+            }
+
+            int spriteCount = xSprites * ySprites;
+
+            RequireArguments(args, 3 + spriteCount, functionName);
+
+            if (args![0] is not NumericLiteral indexLiteral)
+            {
+                throw new ArgumentException(
+                    $"{functionName}() sprite index must be a numeric literal.");
+            }
+
+            int spriteIndex = Convert.ToInt32(indexLiteral.Value);
+
+            if (spriteIndex < 0 || spriteIndex + spriteCount > 64)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(spriteIndex),
+                    "The sprite layout must fit within the 64 OAM entries.");
+            }
+
+            Expression x = args[1];
+            Expression y = args[2];
+
+            for (int row = 0; row < ySprites; row++)
+            {
+                for (int col = 0; col < xSprites; col++)
+                {
+                    int currentIndex = spriteIndex + row * xSprites + col;
+                    int tileArgumentIndex = 3 + row * xSprites + col;
+
+                    // Set OAM address.
+                    _prg.Add(
+                        OpCode.LdaImmediate,
+                        (byte)(currentIndex * 4));
+
+                    _prg.Add(OpCode.StaAbsolute, 0x2003);
+
+                    // Y coordinate = y + row * 8.
+                    EmitByteArgument(y, functionName, "y");
+
+                    int yOffset = row * 8;
+
+                    if (yOffset != 0)
+                    {
+                        _prg.Add(OpCode.Clc);
+                        _prg.Add(OpCode.AdcImmediate, (byte)yOffset);
+                    }
+
+                    _prg.Add(OpCode.StaAbsolute, 0x2004);
+
+                    // Tile index.
+                    EmitByteArgument(
+                        args[tileArgumentIndex],
+                        functionName,
+                        $"tile{row * xSprites + col + 1}");
+
+                    _prg.Add(OpCode.StaAbsolute, 0x2004);
+
+                    // Attributes = 0.
+                    _prg.Add(OpCode.LdaImmediate, 0);
+                    _prg.Add(OpCode.StaAbsolute, 0x2004);
+
+                    // X coordinate = x + col * 8.
+                    EmitByteArgument(x, functionName, "x");
+
+                    int xOffset = col * 8;
+
+                    if (xOffset != 0)
+                    {
+                        _prg.Add(OpCode.Clc);
+                        _prg.Add(OpCode.AdcImmediate, (byte)xOffset);
+                    }
+
+                    _prg.Add(OpCode.StaAbsolute, 0x2004);
+                }
+            }
         }
 
         // ============================================================
