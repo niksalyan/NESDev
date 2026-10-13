@@ -36,6 +36,17 @@ namespace NESCompiler
                     Input();
                     EmitWaitVBlank();
                     return VariableType.None;
+                case "backdrop":
+                    Backdrop();
+                    return VariableType.None;
+
+                case "backgroundPalette":
+                    WritePalette(0x3F00, "backgroundPalette");
+                    return VariableType.None;
+
+                case "spritePalette":
+                    WritePalette(0x3F10, "spritePalette");
+                    return VariableType.None;
                 case "A1": A(Controller1Address); return VariableType.Byte;
                 case "B1": B(Controller1Address); return VariableType.Byte;
                 case "START1": Start(Controller1Address); return VariableType.Byte;
@@ -428,6 +439,132 @@ namespace NESCompiler
                 _prg.Add(OpCode.LsrAccumulator);
                 _prg.Add(OpCode.RolZeroPage, Controller2Address);
             }
+        }
+
+        // ------------------------------------------------------------
+        // Palette function
+        // ------------------------------------------------------------
+
+        // ------------------------------------------------------------
+        // Palette functions
+        // backdrop(color)
+        // backgroundPalette(index, color1, color2, color3)
+        // spritePalette(index, color1, color2, color3)
+        // ------------------------------------------------------------
+
+        private void Backdrop()
+        {
+            RequireArguments(1, "backdrop");
+
+            int color = GetLiteralByte(
+                GetFunctionArgument(0),
+                "backdrop",
+                "color");
+
+            ValidatePaletteColor(color, "backdrop", "color");
+
+            // Universal background color.
+            _prg.PpuAddress(0x3F00);
+            _prg.WritePpu((byte)color);
+
+            // Restore PPU address to the nametable area.
+            _prg.PpuAddress(0x2000);
+        }
+
+        private void WritePalette(int baseAddress, string functionName)
+        {
+            RequireArguments(4, functionName);
+
+            int paletteIndex = GetLiteralByte(
+                GetFunctionArgument(0),
+                functionName,
+                "index");
+
+            if (paletteIndex > 3)
+            {
+                throw new ArgumentOutOfRangeException(
+                    "index",
+                    paletteIndex,
+                    $"{functionName}() index must be between 0 and 3.");
+            }
+
+            int color1 = GetLiteralByte(
+                GetFunctionArgument(1), functionName, "color1");
+
+            int color2 = GetLiteralByte(
+                GetFunctionArgument(2), functionName, "color2");
+
+            int color3 = GetLiteralByte(
+                GetFunctionArgument(3), functionName, "color3");
+
+            ValidatePaletteColor(color1, functionName, "color1");
+            ValidatePaletteColor(color2, functionName, "color2");
+            ValidatePaletteColor(color3, functionName, "color3");
+
+            // Each palette occupies four entries.
+            // Entry 0 is the shared backdrop color.
+            int address = baseAddress + paletteIndex * 4;
+
+            _prg.PpuAddress((ushort)(address + 1));
+            _prg.WritePpu((byte)color1);
+            _prg.WritePpu((byte)color2);
+            _prg.WritePpu((byte)color3);
+
+            _prg.PpuAddress(0x2000);
+        }
+
+        private static void ValidatePaletteColor(
+            int color,
+            string functionName,
+            string argumentName)
+        {
+            if (color > 0x3F)
+            {
+                throw new ArgumentOutOfRangeException(
+                    argumentName,
+                    color,
+                    $"{functionName}() color must be between 0 and 63.");
+            }
+        }
+
+        private void Palette(
+    int baseAddress,
+    int entryCount,
+    string functionName)
+        {
+            RequireArguments(2, functionName);
+
+            int index = GetLiteralByte(
+                GetFunctionArgument(0),
+                functionName,
+                "index");
+
+            int color = GetLiteralByte(
+                GetFunctionArgument(1),
+                functionName,
+                "color");
+
+            if (index >= entryCount)
+            {
+                throw new ArgumentOutOfRangeException(
+                    "index",
+                    index,
+                    $"{functionName}() index must be between 0 and {entryCount - 1}.");
+            }
+
+            if (color > 0x3F)
+            {
+                throw new ArgumentOutOfRangeException(
+                    "color",
+                    color,
+                    "NES palette colors must be between 0 and 63.");
+            }
+
+            _prg.PpuAddress((ushort)(baseAddress + index));
+            _prg.WritePpu((byte)color);
+
+            // Restore the PPU address to the nametable area.
+            _prg.PpuAddress(0x2000);
         }
 
         // ------------------------------------------------------------

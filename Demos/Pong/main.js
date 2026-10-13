@@ -7,14 +7,10 @@ var ballVY = 3;
 var paddleY = 100;
 var aiPaddleY = 100;
 
-var paddleSpriteY = 0;
-var aiPaddleSpriteY = 0;
 
 
 var score1 = 0;
-var score1Tile = 0;
 var score2 = 0;
-var score2Tile = 0;
 
 // Set the shared background color.
 backdrop(12);
@@ -149,26 +145,18 @@ while (true) {
 		score2 = 0;
 	}
 
-
-
-	paddleSpriteY = paddleY - 8;
-	aiPaddleSpriteY = aiPaddleY - 8;
-	
-	score1Tile = score1 + 16;
-	score2Tile = score2 + 16;
-
 	// --------------------------------
     // DRAW PLAYER PADDLE
     // --------------------------------
 
-    sprite1x3(0, 16, paddleSpriteY, 128, 128, 128);
+    sprite1x3(0, 16, paddleY - 8, 128, 128, 128);
     
 
     // --------------------------------
     // DRAW AI PADDLE
     // --------------------------------
 
-    sprite1x3(3, 240, aiPaddleSpriteY, 128, 128, 128);
+    sprite1x3(3, 240, aiPaddleY - 8, 128, 128, 128);
     
 
     // --------------------------------
@@ -180,12 +168,13 @@ while (true) {
     // --------------------------------
     // SYNCHRONIZE WITH NEXT FRAME
     // --------------------------------
+	sync();
+    
 
-    sync();
 
-	tileAt(15, 4, score1Tile);
+	tileAt(15, 4, score1 + 16);
 	tileAt(16, 4, 26);
-	tileAt(17, 4, score2Tile);
+	tileAt(17, 4, score2 + 16);
 	
 	
     
