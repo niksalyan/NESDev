@@ -27,7 +27,7 @@ public class Compiler : AstVisitor
     private string _src;
     private Bytecode _prg;
 
-    public byte[] Compile(string source)
+    public byte[] Compile(string source, byte[] sptites, byte[] tiles)
     {
         _src = source;
         _prg = new Bytecode();
@@ -46,7 +46,7 @@ public class Compiler : AstVisitor
         {
             Mapper = 0,
             PRG = _prg.ToBytecode(),
-            CHR = Tileset.Default
+            CHR = tiles.Concat(sptites).ToArray()
         };
 
         var rom = nes.ToBytes();
@@ -72,20 +72,19 @@ public class Compiler : AstVisitor
         _prg.Add(OpCode.Sei);
         _prg.Add(OpCode.Cld);
 
-        // Initialize 6502 hardware stack.
-        _prg.Add(OpCode.LdxImmediate, 0xFF);
-        _prg.Add(OpCode.Txs);
-
-        // Initialize expression stack index.
-        _prg.Add(OpCode.LdxImmediate, 0);
 
         // ============================================================
         // PPU INITIALIZATION
         // ============================================================
 
         // Disable NMI and rendering.
-        _prg.Add(OpCode.LdaImmediate, 0x00);
+        // Background uses pattern table $0000.
+        // Sprites use pattern table $1000.
+        // Enable background and sprite rendering.
+        _prg.Add(OpCode.LdaImmediate, 0x08);
         _prg.Add(OpCode.StaAbsolute, 0x2000);
+
+        _prg.Add(OpCode.LdaImmediate, 0x1E);
         _prg.Add(OpCode.StaAbsolute, 0x2001);
 
         // Wait for VBlank.
@@ -173,7 +172,7 @@ public class Compiler : AstVisitor
                 VariableDeclarationKind.Var);
 
             EmitExpression(declaration.Init);
-
+            
             if (variable.Address <= 0xFF)
             {
                 _prg.Add(OpCode.StaZeroPage, variable.Address);

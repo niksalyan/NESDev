@@ -5,8 +5,8 @@ var ballVX = 3;
 var ballVY = 3;
 
 var paddleY = 100;
-var aiPaddleY = 100;
-
+var aiPaddleY = 100;     
+ 
 
 
 var score1 = 0;
@@ -20,6 +20,8 @@ backgroundPalette(0, 5, 0, 0);
 
 // Set sprite palette 0's three visible colors.
 spritePalette(0, 16, 27, 30);
+
+
 
 
 for(var x = 0; x < 32; x = x + 1) {
@@ -163,7 +165,7 @@ while (true) {
     // DRAW BALL
     // --------------------------------
 
-    sprite(6, ballX, ballY, 211);
+    sprite2x2(6, ballX - 4, ballY - 4, 107, 108, 109, 110);
 
     // --------------------------------
     // SYNCHRONIZE WITH NEXT FRAME
@@ -171,13 +173,7 @@ while (true) {
 	sync();
     
 
-
 	tileAt(15, 4, score1 + 16);
 	tileAt(16, 4, 26);
 	tileAt(17, 4, score2 + 16);
-	
-	
-    
-	
-
 }

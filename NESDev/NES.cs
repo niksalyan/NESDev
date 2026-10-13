@@ -3,6 +3,7 @@
 using NESCompiler;
 using NESDev.Models;
 using NTOSDev.Components;
+using NTOSDev.Controls;
 using NTOSDev.Libs;
 using System.Collections.Immutable;
 using System.ComponentModel;
@@ -29,11 +30,31 @@ namespace NTOSDev
         public static string LastProject { get => RegistryHelper.ReadRegistry("NESLastProject"); set => RegistryHelper.WriteRegistry("NESLastProject", value); }
 
 
+        public static ChrEditorControl spriteEditor = new ChrEditorControl()
+        {
+            Text = "Sprite Editor",
+            HideOnClose = true
+        };
+
+        public static ChrEditorControl tileEditor = new ChrEditorControl()
+        {
+            Text = "Tile Editor",
+            HideOnClose = true
+        };
+
+        static NES() {
+
+            spriteEditor.SetChrBytes(Tileset.GetSprites());
+            tileEditor.SetChrBytes(Tileset.GetTiles());
+        }
+
+
+
         public static void Compile(string src)
         {
             try
             {
-                var cartridge = Compiler.Compile(src);
+                var cartridge = Compiler.Compile(src, spriteEditor.GetChrBytes(), tileEditor.GetChrBytes());
                 DebugOutput.Clear();
                 DebugOutput.Add(new DebugLine("Compiled", false));
 

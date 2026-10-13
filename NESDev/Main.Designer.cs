@@ -53,6 +53,8 @@
             documentationToolStripMenuItem = new ToolStripMenuItem();
             aboutToolStripMenuItem = new ToolStripMenuItem();
             dockPanel = new WeifenLuo.WinFormsUI.Docking.DockPanel();
+            spriteEditorToolStripMenuItem = new ToolStripMenuItem();
+            tileEditorToolStripMenuItem = new ToolStripMenuItem();
             menuStrip.SuspendLayout();
             SuspendLayout();
             // 
@@ -136,7 +138,7 @@
             // 
             // toolsToolStripMenuItem
             // 
-            toolsToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { imageConverterToolStripMenuItem, spriteViewerToolStripMenuItem, colorPickerToolStripMenuItem, toolStripMenuItem3, instructionsToolStripMenuItem, variablesToolStripMenuItem, debugOutputToolStripMenuItem });
+            toolsToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { imageConverterToolStripMenuItem, spriteViewerToolStripMenuItem, colorPickerToolStripMenuItem, toolStripMenuItem3, instructionsToolStripMenuItem, variablesToolStripMenuItem, debugOutputToolStripMenuItem, spriteEditorToolStripMenuItem, tileEditorToolStripMenuItem });
             toolsToolStripMenuItem.Name = "toolsToolStripMenuItem";
             toolsToolStripMenuItem.Size = new Size(58, 24);
             toolsToolStripMenuItem.Text = "Tools";
@@ -144,42 +146,42 @@
             // imageConverterToolStripMenuItem
             // 
             imageConverterToolStripMenuItem.Name = "imageConverterToolStripMenuItem";
-            imageConverterToolStripMenuItem.Size = new Size(202, 26);
+            imageConverterToolStripMenuItem.Size = new Size(224, 26);
             imageConverterToolStripMenuItem.Text = "Image Converter";
             // 
             // spriteViewerToolStripMenuItem
             // 
             spriteViewerToolStripMenuItem.Name = "spriteViewerToolStripMenuItem";
-            spriteViewerToolStripMenuItem.Size = new Size(202, 26);
+            spriteViewerToolStripMenuItem.Size = new Size(224, 26);
             spriteViewerToolStripMenuItem.Text = "Insert Sprite";
             // 
             // colorPickerToolStripMenuItem
             // 
             colorPickerToolStripMenuItem.Name = "colorPickerToolStripMenuItem";
-            colorPickerToolStripMenuItem.Size = new Size(202, 26);
+            colorPickerToolStripMenuItem.Size = new Size(224, 26);
             colorPickerToolStripMenuItem.Text = "Insert Color";
             // 
             // toolStripMenuItem3
             // 
             toolStripMenuItem3.Name = "toolStripMenuItem3";
-            toolStripMenuItem3.Size = new Size(199, 6);
+            toolStripMenuItem3.Size = new Size(221, 6);
             // 
             // instructionsToolStripMenuItem
             // 
             instructionsToolStripMenuItem.Name = "instructionsToolStripMenuItem";
-            instructionsToolStripMenuItem.Size = new Size(202, 26);
+            instructionsToolStripMenuItem.Size = new Size(224, 26);
             instructionsToolStripMenuItem.Text = "Instructions";
             // 
             // variablesToolStripMenuItem
             // 
             variablesToolStripMenuItem.Name = "variablesToolStripMenuItem";
-            variablesToolStripMenuItem.Size = new Size(202, 26);
+            variablesToolStripMenuItem.Size = new Size(224, 26);
             variablesToolStripMenuItem.Text = "Variables";
             // 
             // debugOutputToolStripMenuItem
             // 
             debugOutputToolStripMenuItem.Name = "debugOutputToolStripMenuItem";
-            debugOutputToolStripMenuItem.Size = new Size(202, 26);
+            debugOutputToolStripMenuItem.Size = new Size(224, 26);
             debugOutputToolStripMenuItem.Text = "Debug Output";
             // 
             // helpToolStripMenuItem
@@ -208,6 +210,18 @@
             dockPanel.Name = "dockPanel";
             dockPanel.Size = new Size(1280, 692);
             dockPanel.TabIndex = 1;
+            // 
+            // spriteEditorToolStripMenuItem
+            // 
+            spriteEditorToolStripMenuItem.Name = "spriteEditorToolStripMenuItem";
+            spriteEditorToolStripMenuItem.Size = new Size(224, 26);
+            spriteEditorToolStripMenuItem.Text = "Sprite Editor";
+            // 
+            // tileEditorToolStripMenuItem
+            // 
+            tileEditorToolStripMenuItem.Name = "tileEditorToolStripMenuItem";
+            tileEditorToolStripMenuItem.Size = new Size(224, 26);
+            tileEditorToolStripMenuItem.Text = "Tile Editor";
             // 
             // Main
             // 
@@ -256,5 +270,7 @@
         private ToolStripMenuItem debugOutputToolStripMenuItem;
         private ToolStripMenuItem uploadToolStripMenuItem;
         private ToolStripMenuItem colorPickerToolStripMenuItem;
+        private ToolStripMenuItem spriteEditorToolStripMenuItem;
+        private ToolStripMenuItem tileEditorToolStripMenuItem;
     }
 }

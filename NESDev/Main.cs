@@ -1,4 +1,6 @@
-﻿using NTOSDev.Components;
+﻿
+using NESCompiler;
+using NTOSDev.Components;
 using NTOSDev.Controls;
 using System.Diagnostics;
 using System.Text.RegularExpressions;
@@ -34,6 +36,7 @@ namespace NTOSDev
         {
             HideOnClose = true
         };
+
         private string appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         private string appLayoutFile;
 
@@ -53,6 +56,8 @@ namespace NTOSDev
             catch { } // Ignore if layout file doesn't exist or is invalid
 
             AttachMenuHandlers(menuStrip.Items);
+
+
         }
 
         private void Main_Load(object sender, EventArgs e)
@@ -317,6 +322,12 @@ function loop() {{
                     break;
                 case "debugOutput":
                     dTerminal.Show(dockPanel, DockState.DockBottom);
+                    break;
+                case "tileEditor":
+                    NES.tileEditor.Show(dockPanel, DockState.Document);
+                    break;
+                case "spriteEditor":
+                    NES.spriteEditor.Show(dockPanel, DockState.Document);
                     break;
                 case "about":
                     new AboutForm().ShowDialog();
