@@ -7,16 +7,23 @@ var ballVY = 3;
 var paddleY = 100;
 var aiPaddleY = 100;
 
-var paddleY2 = 100;
-var aiPaddleY2 = 100;
+var paddleSpriteY = 0;
+var aiPaddleSpriteY = 0;
 
-var paddleY3 = 100;
-var aiPaddleY3 = 100;
 
 var score1 = 0;
 var score1Tile = 0;
 var score2 = 0;
 var score2Tile = 0;
+
+// Set the shared background color.
+backdrop(12);
+
+// Set background palette 0's three additional colors.
+backgroundPalette(0, 5, 0, 0);
+
+// Set sprite palette 0's three visible colors.
+spritePalette(0, 16, 27, 30);
 
 
 for(var x = 0; x < 32; x = x + 1) {
@@ -89,10 +96,8 @@ while (true) {
     // --------------------------------
 
     if (ballX < 24) {
-		var tmp1 = paddleY - 12;
-		var tmp2 = paddleY + 12;
-        if (ballY > tmp1) {
-            if (ballY < tmp2) {
+		if (ballY > paddleY - 12) {
+            if (ballY < paddleY + 12) {
                 ballX = 24;
                 ballVX = 3;
             }
@@ -105,10 +110,8 @@ while (true) {
     // --------------------------------
 
     if (ballX > 232) {
-		tmp1 = aiPaddleY - 12;
-		tmp2 = aiPaddleY + 12;
-        if (ballY > tmp1) {
-            if (ballY < tmp2) {
+		if (ballY > aiPaddleY - 12) {
+            if (ballY < aiPaddleY + 12) {
                 ballX = 232;
                 ballVX = 0 - 3;
             }
@@ -148,11 +151,9 @@ while (true) {
 
 
 
-	paddleY2 = paddleY - 8;
-	paddleY3 = paddleY + 8;
-	aiPaddleY2 = aiPaddleY - 8;
-	aiPaddleY3 = aiPaddleY + 8;
-
+	paddleSpriteY = paddleY - 8;
+	aiPaddleSpriteY = aiPaddleY - 8;
+	
 	score1Tile = score1 + 16;
 	score2Tile = score2 + 16;
 
@@ -160,21 +161,21 @@ while (true) {
     // DRAW PLAYER PADDLE
     // --------------------------------
 
-    sprite1x3(1, 16, paddleY2, 128, 128, 128);
+    sprite1x3(0, 16, paddleSpriteY, 128, 128, 128);
     
 
     // --------------------------------
     // DRAW AI PADDLE
     // --------------------------------
 
-    sprite1x3(5, 240, aiPaddleY2, 128, 128, 128);
+    sprite1x3(3, 240, aiPaddleSpriteY, 128, 128, 128);
     
 
     // --------------------------------
     // DRAW BALL
     // --------------------------------
 
-    sprite(8, ballX, ballY, 211);
+    sprite(6, ballX, ballY, 211);
 
     // --------------------------------
     // SYNCHRONIZE WITH NEXT FRAME

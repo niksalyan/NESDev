@@ -478,39 +478,18 @@ public class Compiler : AstVisitor
 
     private void EmitComparison(NonLogicalBinaryExpression binary)
     {
+        // Evaluate right side: tmp1 + 15.
+        EmitExpression(binary.Right);
+
+        // Save right result.
+        _prg.Add(OpCode.StaZeroPage, ExpressionTemp);
+
+        // Evaluate left side: ballY.
         EmitExpression(binary.Left);
 
-        if (binary.Right is Literal literal)
-        {
-            // Compare A with an immediate constant.
-            _prg.Add(
-                OpCode.CmpImmediate,
-                Convert.ToByte(literal.Value));
-        }
-        else if (binary.Right is Identifier identifier)
-        {
-            var variable = _prg.GetVariable(identifier.Name);
-
-            if (variable.Address <= 0xFF)
-            {
-                _prg.Add(
-                    OpCode.CmpZeroPage,
-                    variable.Address);
-            }
-            else
-            {
-                _prg.Add(
-                    OpCode.CmpAbsolute,
-                    variable.Address);
-            }
-        }
-        else
-        {
-            throw new NotSupportedException(
-                "Comparison operands must be simple literals or variables.");
-        }
+        // Compare left against right.
+        _prg.Add(OpCode.CmpZeroPage, ExpressionTemp);
     }
-
 
     private List<int> EmitComparisonBranch(Operator op)
     {

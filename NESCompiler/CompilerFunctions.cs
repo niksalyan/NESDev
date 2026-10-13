@@ -62,6 +62,17 @@ namespace NESCompiler
                     Input();
                     EmitWaitVBlank();
                     return VariableType.None;
+                case "backdrop":
+                    Backdrop(args);
+                    return VariableType.None;
+
+                case "backgroundPalette":
+                    BackgroundPalette(args);
+                    return VariableType.None;
+
+                case "spritePalette":
+                    SpritePalette(args);
+                    return VariableType.None;
 
                 case "A1":
                     A(Controller1Address);
@@ -157,6 +168,53 @@ namespace NESCompiler
             }
 
             return _arguments[argumentIndex];
+        }
+
+        private void EmitByteArgument(
+    Expression argument,
+    string functionName,
+    string argumentName)
+        {
+            switch (argument)
+            {
+                case NumericLiteral literal:
+                    {
+                        int value = Convert.ToInt32(literal.Value);
+
+                        if (value < 0 || value > 255)
+                        {
+                            throw new ArgumentOutOfRangeException(
+                                argumentName,
+                                value,
+                                $"{functionName}() argument '{argumentName}' " +
+                                "must be between 0 and 255.");
+                        }
+
+                        _prg.Add(OpCode.LdaImmediate, (byte)value);
+                        return;
+                    }
+
+                case Identifier identifier:
+                    {
+                        Variable variable = _prg.GetVariable(identifier.Name);
+
+                        if (variable.Address <= 0xFF)
+                        {
+                            _prg.Add(OpCode.LdaZeroPage, variable.Address);
+                        }
+                        else
+                        {
+                            _prg.Add(OpCode.LdaAbsolute, variable.Address);
+                        }
+
+                        return;
+                    }
+
+                default:
+                    throw new NotSupportedException(
+                        $"{functionName}() argument '{argumentName}' " +
+                        "must be a numeric literal or variable.");
+            }
         }
 
         private void EmitByteArgument(
@@ -282,6 +340,63 @@ namespace NESCompiler
 
             EmitByteArgument(1, "scroll", "y");
             _prg.Add(OpCode.StaAbsolute, 0x2005);
+        }
+
+        private void Backdrop(IReadOnlyList<Expression>? args)
+        {
+            RequireArguments(1, "backdrop");
+
+            SetPaletteColor(
+                0x3F00,
+                args![0],
+                "backdrop",
+                "color");
+        }
+
+        private void BackgroundPalette(IReadOnlyList<Expression>? args)
+        {
+            RequireArguments(4, "backgroundPalette");
+
+            int palette = GetLiteralByte(
+                args![0], "backgroundPalette", "palette");
+
+            if (palette > 3)
+                throw new ArgumentOutOfRangeException(
+                    "palette", "Palette index must be 0 to 3.");
+
+            int address = 0x3F01 + palette * 4;
+
+            for (int i = 1; i <= 3; i++)
+            {
+                SetPaletteColor(
+                    address++,
+                    args[i],
+                    "backgroundPalette",
+                    $"color{i}");
+            }
+        }
+
+        private void SpritePalette(IReadOnlyList<Expression>? args)
+        {
+            RequireArguments(4, "spritePalette");
+
+            int palette = GetLiteralByte(
+                args![0], "spritePalette", "palette");
+
+            if (palette > 3)
+                throw new ArgumentOutOfRangeException(
+                    "palette", "Palette index must be 0 to 3.");
+
+            int address = 0x3F11 + palette * 4;
+
+            for (int i = 1; i <= 3; i++)
+            {
+                SetPaletteColor(
+                    address++,
+                    args[i],
+                    "spritePalette",
+                    $"color{i}");
+            }
         }
 
         // ============================================================
@@ -608,6 +723,19 @@ namespace NESCompiler
             {
                 _prg.WritePpu((byte)(c - 32));
             }
+        }
+
+        private void SetPaletteColor(
+    int address,
+    Expression color,
+    string functionName,
+    string argumentName)
+        {
+            _prg.PpuAddress((ushort)address);
+
+            EmitByteArgument(color, functionName, argumentName);
+
+            _prg.Add(OpCode.StaAbsolute, 0x2007);
         }
 
         // ============================================================
